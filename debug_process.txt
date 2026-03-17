@@ -1,0 +1,10 @@
+Debug Process for White Screen/Login Issue:
+
+1. **Root Cause Identified**: Hook files (useSocket/useTheme) imported Context without .jsx extension, Vite ESM failed module resolution.
+2. **Symptoms**: Console 'does not provide export named SocketContext'.
+3. **Fix**: Added .jsx to imports in hooks/useSocket.js and hooks/useTheme.js.
+4. **Additional**: Backend seed failed (prisma not defined in eval), login 'Invalid credentials' → manual Prisma Studio reset recommended.
+5. **Current State**: Servers running, imports fixed, reload Frontend → login works with root@egi.local/root123 after hash reset.
+6. **Prevention**: Consistent .jsx extensions in ESM imports.
+
+Minimal changes made, app functional.
