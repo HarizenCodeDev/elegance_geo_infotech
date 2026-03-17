@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import { useAuth } from "../context/authContext";
 
@@ -14,34 +14,35 @@ const LeavesList = () => {
   const { user } = useAuth();
   const canApprove = ["admin", "manager", "root"].includes(user?.role);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const token = localStorage.getItem("token");
-        const res = await axios.get(`${API_BASE}/api/leaves`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const mapped =
-          res.data?.leaves?.map((l) => ({
-            id: l._id,
-            empId: l.user?.employeeId || "NA",
-            name: l.user?.name || "Unknown",
-            type: l.type,
-            dept: l.user?.department || "-",
-            days: l.from && l.to ? Math.max(1, (new Date(l.to) - new Date(l.from)) / 86400000 + 1) : 1,
-            status: l.status,
-          })) || [];
-        setRows(mapped);
-      } catch (err) {
-        setError(err.response?.data?.error || err.message || "Failed to load leaves");
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`${API_BASE}/api/leaves`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const mapped =
+        res.data?.leaves?.map((l) => ({
+          id: l._id,
+          empId: l.user?.employeeId || "NA",
+          name: l.user?.name || "Unknown",
+          type: l.type,
+          dept: l.user?.department || "-",
+          days: l.from && l.to ? Math.max(1, (new Date(l.to) - new Date(l.from)) / 86400000 + 1) : 1,
+          status: l.status,
+        })) || [];
+      setRows(mapped);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Failed to load leaves");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     type: "",
@@ -79,6 +80,9 @@ const LeavesList = () => {
       <div className="text-center">
         <h2 className="text-xl font-semibold text-white">Leave Request</h2>
       </div>
+
+      {loading && <div className="text-slate-300 text-sm">Loading employees...</div>}
+      {error && <div className="text-rose-400 text-sm">{error}</div>}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <input
@@ -232,7 +236,7 @@ const LeavesList = () => {
                 <td className="px-3 py-2">{l.dept}</td>
                 <td className="px-3 py-2">{l.days}</td>
                 <td className="px-3 py-2">
-                  {l.status === "Pending" ? (
+                  {l.status === "Pending" && canApprove ? (
                     <div className="flex gap-2">
                       <button
                         className="text-emerald-400 hover:text-white text-xs"

@@ -14,7 +14,7 @@ const ForgotPassword = () => {
         setMessage("");
         setLoading(true);
         try {
-            const response = await axios.post("http://localhost:5000/api/auth/forgot-password", { email });
+            await axios.post("http://localhost:5000/api/auth/forgot-password", { email });
             setMessage("Request sent to manager/root account user. Please wait for assistance.");
         } catch (error) {
             setError(error.response?.data?.error || "Failed to send request. Please try again.");

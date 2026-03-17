@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import { useAuth } from "../context/authContext";
 
@@ -15,7 +15,7 @@ const EmployeeLeaves = () => {
   const [error, setError] = useState("");
   const { user } = useAuth();
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -41,11 +41,11 @@ const EmployeeLeaves = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?._id]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const filtered = useMemo(() => {
     return rows.filter((l) => {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useAuth } from "../context/authContext";
 import axios from "axios";
 
@@ -13,24 +13,6 @@ const groupContacts = [
   { id: "grp-team1", name: "Team1", allowedRoles: ["teamlead", "developer", "root"] },
   { id: "grp-team2", name: "Team2", allowedRoles: ["teamlead", "developer", "root"] },
 ];
-
-const starterByContact = {
-  alex: [
-    { id: 1, author: "Alex", text: "Hey, need the latest attendance?" },
-    { id: 2, author: "You", text: "I’ll send it in a minute." },
-  ],
-  jordan: [
-    { id: 3, author: "Jordan", text: "Payroll draft is ready for review." },
-    { id: 4, author: "You", text: "Great, looking now." },
-  ],
-  sam: [{ id: 5, author: "Sam", text: "Let’s sync at 3 PM?" }],
-  you: [{ id: 6, author: "You", text: "Notes to self go here." }],
-  "grp-hr": [{ id: 7, author: "HR Bot", text: "Welcome to HR group." }],
-  "grp-bd": [{ id: 8, author: "BD Lead", text: "Share leads updates here." }],
-  "grp-dev": [{ id: 9, author: "Dev Lead", text: "Sprint planning at 4 PM." }],
-  "grp-team1": [{ id: 10, author: "Team1", text: "Daily standup notes." }],
-  "grp-team2": [{ id: 11, author: "Team2", text: "Share blockers here." }],
-};
 
 const ChatWindow = () => {
   const { user } = useAuth();
@@ -71,10 +53,11 @@ const ChatWindow = () => {
       }
     };
     loadContacts();
-  }, [userId, visibleGroups.length, activeContact]);
+  }, [userId, visibleGroups, activeContact]);
 
-  const loadMessages = async (contactId = activeContact) => {
-    if (!contactId) return;
+  const loadMessages = useCallback(
+    async (contactId = activeContact) => {
+      if (!contactId) return;
       try {
         setChatError("");
         const token = localStorage.getItem("token");
@@ -87,18 +70,21 @@ const ChatWindow = () => {
       } catch (err) {
         setChatError(err.response?.data?.error || err.message || "Failed to load messages");
       }
-    };
+    },
+    [activeContact, visibleGroups]
+  );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadMessages();
-  }, [activeContact, visibleGroups]);
+  }, [loadMessages]);
 
   // polling to receive new messages from others
   useEffect(() => {
     if (!activeContact) return;
     const interval = setInterval(() => loadMessages(activeContact), 3000);
     return () => clearInterval(interval);
-  }, [activeContact, visibleGroups]);
+  }, [activeContact, visibleGroups, loadMessages]);
 
   const currentMessages = useMemo(() => {
     const msgs = messages[activeContact] || [];
