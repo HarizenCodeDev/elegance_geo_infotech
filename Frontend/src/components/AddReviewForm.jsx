@@ -136,7 +136,3 @@ const AddReviewForm = ({ onDone, revieweeId: prefilledRevieweeId }) => {
 };
 
 export default AddReviewForm;
-</xai:function_call}
-
-<xai:function_call name="edit_file">
-<parameter name="path">Frontend/src/pages/AdminDashboard.jsx

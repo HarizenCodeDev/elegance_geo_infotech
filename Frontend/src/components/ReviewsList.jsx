@@ -81,7 +81,7 @@ const ReviewsList = ({ onAddNew, title = "Performance Reviews", filterRevieweeId
                 </td>
               </tr>
             )}
-            {filtered.map((review, idx) => (
+{filtered.map((review) => (
               <tr key={review.id} className="border-t border-slate-800 hover:bg-slate-700/50">
                 <td className="px-3 py-3">
                   <div className="font-medium text-white">{review.reviewee.name}</div>
@@ -117,7 +117,3 @@ const ReviewsList = ({ onAddNew, title = "Performance Reviews", filterRevieweeId
 };
 
 export default ReviewsList;
-</xai:function_call}
-
-<xai:function_call name="create_file">
-<parameter name="absolute_path">Frontend/src/components/AddReviewForm.jsx

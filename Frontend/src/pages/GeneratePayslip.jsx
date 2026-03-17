@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/authContext';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 const GeneratePayslip = () => {
-  const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [employeeId, setEmployeeId] = useState('');
   const [month, setMonth] = useState('');

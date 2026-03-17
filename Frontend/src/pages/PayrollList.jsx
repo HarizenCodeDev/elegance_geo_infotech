@@ -1,20 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/authContext';
+import React, { useCallback, useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 const PayrollList = () => {
-  const { user } = useAuth();
   const [payrolls, setPayrolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [employeeId, setEmployeeId] = useState('');
 
-  useEffect(() => {
-    fetchPayroll();
-  }, [employeeId]);
-
-  const fetchPayroll = async () => {
+  const fetchPayroll = useCallback(async () => {
     try {
       const params = employeeId ? { employeeId } : {};
       const res = await axios.get(`${API_BASE}/api/payroll`, {
@@ -27,7 +21,11 @@ const PayrollList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [employeeId]);
+
+  useEffect(() => {
+    fetchPayroll();
+  }, [fetchPayroll]);
 
   if (loading) return <div className="p-8 text-center">Loading payroll...</div>;
 

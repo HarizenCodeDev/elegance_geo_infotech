@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { useAuth } from "./authContext";
-import { API_BASE } from "../utils/api"; // or hardcode
-
+// Fixed duplicate API_BASE
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const SocketContext = createContext(null);
@@ -38,18 +37,12 @@ export const SocketProvider = ({ children }) => {
         newSocket.disconnect();
       };
     }
-  }, [user]);
+  }, [user, logout]);
 
   return (
     <SocketContext.Provider value={{ socket }}>
       {children}
     </SocketContext.Provider>
   );
-};
-
-export const useSocket = () => {
-  const ctx = useContext(SocketContext);
-  if (!ctx) throw new Error("useSocket must be used within SocketProvider");
-  return ctx.socket;
 };
 

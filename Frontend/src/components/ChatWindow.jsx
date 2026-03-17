@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import axios from "axios";
 import { useAuth } from "../context/authContext";
-import { useSocket } from "../context/SocketContext";
+import { useSocket } from "../hooks/useSocket";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -30,7 +31,7 @@ const ChatWindow = () => {
   const [messages, setMessages] = useState({});
   const [text, setText] = useState("");
   const [contactSearch, setContactSearch] = useState("");
-  const [chatError, setChatError] = useState("");
+  const [chatError, _setChatError] = useState(""); // Used for error display
 
   useEffect(() => {
     const loadContacts = async () => {
@@ -54,7 +55,7 @@ const ChatWindow = () => {
       }
     };
     loadContacts();
-  }, [userId, visibleGroups]);
+  }, [userId, visibleGroups]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 

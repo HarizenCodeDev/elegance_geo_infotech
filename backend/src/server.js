@@ -11,7 +11,6 @@ import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import http from "http";
 import { Server } from "socket.io";
-import cors from "cors";
 import PDFDocument from "pdfkit";
 import { v4 as uuidv4 } from "uuid";
 
