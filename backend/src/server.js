@@ -35,6 +35,10 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"]
   }
 });
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true
+}));
 app.use(express.json());
 app.use(morgan("dev"));
 app.use("/uploads", express.static(STORAGE_DIR));
@@ -45,12 +49,46 @@ const uploadPayslip = multer({ dest: path.join(STORAGE_DIR, "payslips") });
 if (!fs.existsSync(path.join(STORAGE_DIR, "payslips"))) fs.mkdirSync(path.join(STORAGE_DIR, "payslips"), { recursive: true });
 
 const roles = ["developer", "teamlead", "manager", "hr", "admin", "root"];
+const roleHierarchy = {
+  developer: 0,
+  teamlead: 1,
+  manager: 2,
+  hr: 2,
+  admin: 3,
+  root: 4
+};
 
 // helpers
 const signToken = (user) =>
   jwt.sign({ id: user.id, role: user.role, email: user.email, name: user.name }, JWT_SECRET, {
     expiresIn: "7d",
   });
+
+const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: `Requires one of: ${allowedRoles.join(', ')}` });
+    }
+    next();
+  };
+};
+
+const authorizeRootOnly = (req, res, next) => {
+  if (req.user.role !== 'root') return res.status(403).json({ error: "Root access required" });
+  next();
+};
+
+const authorizeSelfOrHigher = (userIdField = 'userId') => {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    if (req.user.role === 'root' || req.user.role === 'admin') return next();
+    if (req.body[userIdField] !== req.user.id && req.params.id !== req.user.id) {
+      return res.status(403).json({ error: "Can only access own data" });
+    }
+    next();
+  };
+};
 
 const auth = async (req, res, next) => {
   const header = req.headers.authorization;
@@ -86,17 +124,82 @@ const ensureRootSeed = async () => {
 };
 
 // Auth routes
+app.post("/api/auth/reset-password", async (req, res) => {
+  const { token, newPassword, email } = req.body;
+  if (!token || !newPassword || !email) return res.status(400).json({ error: "token, newPassword, email required" });
+
+  try {
+    const request = await prisma.passwordRequest.findFirst({
+      where: { 
+        token, 
+        email, 
+        used: false,
+        expiresAt: { gt: new Date() }
+      },
+      include: { user: true }
+    });
+    if (!request || !request.user) return res.status(404).json({ error: "Invalid or expired token" });
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: request.userId }, data: { passwordHash } }),
+      prisma.passwordRequest.update({ where: { id: request.id }, data: { used: true } })
+    ]);
+    res.json({ message: "Password reset successfully" });
+  } catch (err) {
+    console.error("Error resetting password:", err);
+    res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
+app.post("/api/auth/root-reset", auth, async (req, res) => {
+  if (req.user.role !== 'root') return res.status(403).json({ error: "Root only" });
+  const { email, newPassword } = req.body;
+  if (!email || !newPassword) return res.status(400).json({ error: "email, newPassword required" });
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  try {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash, firstLogin: true } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'ROOT_PASSWORD_RESET',
+        entity: 'User',
+        entityId: user.id,
+        newValues: { email: user.email },
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+    res.json({ message: `Password reset for ${email}. First login required.` });
+  } catch (err) {
+    console.error("Error root reset:", err);
+    res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Invalid credentials" }); // Password mismatch
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
   try {
-    const token = signToken(user);
-    return res.json({ token, user });
+    const token = signToken({
+      ...user,
+      forcePasswordChange: user.firstLogin || user.forcePasswordChange
+    });
+    res.json({ 
+      token, 
+      user: {
+        ...user,
+        forcePasswordChange: user.firstLogin || user.forcePasswordChange
+      } 
+    });
   } catch (err) {
     console.error("Error signing token:", err);
     return res.status(500).json({ error: "Authentication failed" });
@@ -110,20 +213,67 @@ app.put("/api/auth/change-password", auth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   if (!oldPassword || !newPassword) return res.status(400).json({ error: "Missing passwords" });
   const ok = await bcrypt.compare(oldPassword, req.user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Old password incorrect" }); // Old password mismatch
+  if (!ok) return res.status(401).json({ error: "Old password incorrect" });
 
   try {
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
-    res.json({ message: "Password changed" });
+    await prisma.user.update({ 
+      where: { id: req.user.id }, 
+      data: { 
+        passwordHash,
+        firstLogin: false,
+        forcePasswordChange: false 
+      } 
+    });
+    // Log to audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'PASSWORD_CHANGED',
+        entity: 'User',
+        entityId: req.user.id,
+        ipAddress: req.ip || 'unknown',
+      }
+    });
+    res.json({ message: "Password changed successfully" });
   } catch (err) {
     console.error("Error changing password:", err);
     res.status(500).json({ error: "Failed to change password" });
   }
 });
 app.post("/api/auth/forgot-password", async (req, res) => {
-  // Stub: in real app, notify admin/root; here we just respond success
-  res.json({ message: "Request received" });
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  try {
+    const token = require('crypto').randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await prisma.passwordRequest.upsert({
+      where: { email },
+      update: { token, expiresAt, used: false },
+      create: { email, token, expiresAt, used: false, userId: user.id }
+    });
+    // In prod: Send email with token link to admin/root + notify them
+    console.log(`Password reset token for ${email}: ${token} (expires ${expiresAt})`);
+    await prisma.auditLog.create({
+      data: {
+        userId: null,
+        action: 'PASSWORD_RESET_REQUESTED',
+        entity: 'PasswordRequest',
+        entityId: null,
+        oldValues: { email },
+        newValues: { email, expiresAt: expiresAt.toISOString() },
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+    res.json({ message: "Reset token generated. Check console/admin notification (prod: email sent)" });
+  } catch (err) {
+    console.error("Error generating reset token:", err);
+    res.status(500).json({ error: "Failed to request password reset" });
+  }
 });
 app.post("/api/auth/avatar", auth, upload.single("avatar"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "File required" });
@@ -137,19 +287,35 @@ app.post("/api/auth/avatar", auth, upload.single("avatar"), async (req, res) => 
   }
 });
 // Employees
-app.get("/api/employees", auth, async (req, res) => {
+app.get("/api/employees", auth, authorizeRoles('admin', 'root'), async (req, res) => {
   try {
-    const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
+    const users = await prisma.user.findMany({ 
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employeeId: true,
+        department: true,
+        profileImage: true,
+        createdAt: true
+      }
+    });
     res.json({ users });
   } catch (err) {
     console.error("Error fetching employees:", err);
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 });
-app.post("/api/employees", auth, upload.single("profileImage"), async (req, res) => {
+app.post("/api/employees", auth, authorizeRoles('admin', 'root'), upload.single("profileImage"), async (req, res) => {
   const data = req.body;
-  if (!data.email || !data.password || !data.name)
-    return res.status(400).json({ error: "name, email, password required" });
+  if (!data.email || !data.name)
+    return res.status(400).json({ error: "name, email required" });
+
+  // Generate default password if not provided
+  const defaultPw = data.password || `${data.name.toLowerCase()}@123`;
+  console.log(`Creating user ${data.name} with default pw: ${defaultPw} (change on first login)`);
 
   // Basic validation for other fields
   if (data.dob && isNaN(new Date(data.dob).getTime())) return res.status(400).json({ error: "Invalid date of birth format" });
@@ -159,7 +325,7 @@ app.post("/api/employees", auth, upload.single("profileImage"), async (req, res)
   if (data.salary) data.salary = Number(data.salary);
 
   try {
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordHash = await bcrypt.hash(defaultPw, 10);
     const role = roles.includes(data.role) ? data.role : "developer";
     const user = await prisma.user.create({
       data: {
@@ -168,24 +334,39 @@ app.post("/api/employees", auth, upload.single("profileImage"), async (req, res)
         passwordHash,
         role,
         employeeId: data.employeeId || null,
-        dob: data.dob ? new Date(data.dob) : null,
+        dob: data.dob,
         gender: data.gender || null,
         maritalStatus: data.maritalStatus || null,
         department: data.department || null,
-        salary: data.salary ? Number(data.salary) : null,
-        profileImage: data.profileImage || null,
+        salary: data.salary,
+        profileImage: req.file ? `/uploads/${req.file.filename}` : null,
+        firstLogin: true,
       },
     });
-    res.status(201).json({ user }); // Use 201 for resource creation
+    // Log audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'USER_CREATED',
+        entity: 'User',
+        entityId: user.id,
+        newValues: { name: user.name, email: user.email, role: user.role },
+        ipAddress: req.ip || 'unknown',
+      }
+    });
+    res.status(201).json({ 
+      user,
+      defaultPassword: defaultPw // Send for admin notification (remove in prod?)
+    });
   } catch (err) {
-    if (err.code === 'P2002') { // Unique constraint violation (e.g., duplicate email)
+    if (err.code === 'P2002') {
       return res.status(409).json({ error: `User with email '${data.email}' already exists.` });
     }
     console.error("Error creating employee:", err);
     res.status(500).json({ error: "Failed to create employee" });
   }
 });
-app.put("/api/employees/:id", auth, upload.single("profileImage"), async (req, res) => {
+app.put("/api/employees/:id", auth, authorizeRoles('admin', 'root'), upload.single("profileImage"), async (req, res) => {
   const { id } = req.params;
   const data = { ...req.body };
 
@@ -250,97 +431,247 @@ app.post("/api/leaves", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to create leave request" });
   }
 });
-app.put("/api/leaves/:id/status", auth, async (req, res) => {
-  const { status } = req.body;
-  const allowed = ["Pending", "Approved", "Rejected"];
-  if (!allowed.includes(status)) return res.status(400).json({ error: "Bad status" });
-
+app.put("/api/leaves/:id/approve-level1", auth, authorizeRoles('manager', 'hr', 'admin'), async (req, res) => {
+  const { comment } = req.body;
   try {
-    const leave = await prisma.leave.update({ where: { id: req.params.id }, data: { status } });
-    if (status === "Approved") {
-      await prisma.notification.create({
-        data: {
-          userId: leave.userId,
-          title: "Leave Approved",
-          body: `Your leave from ${leave.from?.toLocaleDateString()} to ${leave.to?.toLocaleDateString()} has been approved.`,
-          type: 'leave_approved',
-        },
-      });
-      const user = await prisma.user.findUnique({ where: { id: leave.userId } });
-      if (user) io.to(`user:${leave.userId}`).emit('notification', { id: Date.now(), userId: leave.userId, title: "Leave Approved", body: `Your leave from ${leave.from?.toLocaleDateString()} to ${leave.to?.toLocaleDateString()} has been approved.`, type: 'leave_approved', read: false, createdAt: new Date() });
-    }
-    res.json({ leave });
+    const leave = await prisma.leave.findUnique({ where: { id: req.params.id }, include: { user: true } });
+    if (!leave) return res.status(404).json({ error: "Leave not found" });
+    
+    if (leave.status !== 'Pending') return res.status(400).json({ error: "Can only approve pending leaves" });
+    
+    const updated = await prisma.leave.update({
+      where: { id: req.params.id },
+      data: { 
+        status: 'Level1Approved',
+        level1_approved_by: req.user.id,
+        level1_approved_at: new Date(),
+      }
+    });
+
+    // Notify employee
+    await prisma.notification.create({
+      data: {
+        userId: leave.userId,
+        title: "Leave Level 1 Approved",
+        body: `Your leave request has been approved by ${req.user.name} (Level 1).`,
+        type: 'leave_level1_approved'
+      }
+    });
+    
+    io.to(`user:${leave.userId}`).emit('notification', {
+      title: "Leave Level 1 Approved",
+      body: `Your leave request has been approved by ${req.user.name} (Level 1).`,
+      type: 'leave_level1_approved'
+    });
+
+    res.json({ leave: updated });
   } catch (err) {
-    if (err.code === 'P2025') {
-      return res.status(404).json({ error: `Leave request with ID ${req.params.id} not found.` });
-    }
-    console.error("Error updating leave status:", err);
-    res.status(500).json({ error: "Failed to update leave status" });
+    console.error(err);
+    res.status(500).json({ error: "Failed to approve leave" });
+  }
+});
+
+app.put("/api/leaves/:id/reject-level1", auth, authorizeRoles('manager', 'hr', 'admin'), async (req, res) => {
+  const { comment } = req.body;
+  try {
+    const leave = await prisma.leave.findUnique({ where: { id: req.params.id }, include: { user: true } });
+    if (!leave) return res.status(404).json({ error: "Leave not found" });
+    
+    if (leave.status !== 'Pending') return res.status(400).json({ error: "Can only reject pending leaves" });
+    
+    const updated = await prisma.leave.update({
+      where: { id: req.params.id },
+      data: { 
+        status: 'Level1Rejected',
+        level1_approved_by: req.user.id,
+        level1_approved_at: new Date(),
+      }
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: leave.userId,
+        title: "Leave Level 1 Rejected", 
+        body: `Your leave request was rejected by ${req.user.name}.`,
+        type: 'leave_level1_rejected'
+      }
+    });
+
+    res.json({ leave: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to reject leave" });
+  }
+});
+
+app.put("/api/leaves/:id/approve-level2", auth, authorizeRoles('root'), async (req, res) => {
+  const { comment } = req.body;
+  try {
+    const leave = await prisma.leave.findUnique({ where: { id: req.params.id }, include: { user: true } });
+    if (!leave) return res.status(404).json({ error: "Leave not found" });
+    
+    if (leave.status !== 'Level1Approved') return res.status(400).json({ error: "Must be Level1 approved first" });
+    
+    const updated = await prisma.leave.update({
+      where: { id: req.params.id },
+      data: { 
+        status: 'Level2Approved',
+        level2_approved_by: req.user.id,
+        level2_approved_at: new Date(),
+      }
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: leave.userId,
+        title: "Leave Fully Approved",
+        body: `Your leave request has been fully approved.`,
+        type: 'leave_fully_approved'
+      }
+    });
+
+    res.json({ leave: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to approve final level" });
   }
 });
 // Attendance
+app.get("/api/attendance/export", auth, authorizeRoles('admin', 'root'), async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from and to dates required' });
+  
+  try {
+    const records = await prisma.attendance.findMany({
+      where: { date: { gte: new Date(from), lte: new Date(to) } },
+      include: { user: { select: { id: true, name: true, employeeId: true, department: true } } },
+      orderBy: [{ date: 'asc' }, { user: { name: 'asc' } }]
+    });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=attendance_${from}_to_${to}.xlsx`);
+    
+    // CSV for simplicity (Excel compatible)
+    const csv = [
+      ['Date', 'Employee ID', 'Name', 'Department', 'Status', 'Check-in', 'Check-out'],
+      ...records.map(r => [
+        r.date.toISOString().slice(0, 10),
+        r.user.employeeId || '',
+        r.user.name,
+        r.user.department || '',
+        r.status || 'Absent',
+        r.checkInAt ? r.checkInAt.toISOString().slice(11, 16) : '',
+        r.checkOutAt ? r.checkOutAt.toISOString().slice(11, 16) : ''
+      ])
+    ].map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')).join('\\n');
+    
+    res.send(`sep=,\n${csv}`);
+  } catch (err) {
+    console.error('Export error:', err);
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
 app.get("/api/attendance", auth, async (req, res) => {
-  const { date, from, to } = req.query;
+  const { date, from, to, userId, month } = req.query;
   let where = {};
+  
+  if (userId) where.userId = userId;
   if (date) {
     const d = new Date(date);
     where.date = d;
+  } else if (month) {
+    const [year, mon] = month.split('-');
+    const start = new Date(parseInt(year), parseInt(mon) - 1, 1);
+    const end = new Date(parseInt(year), parseInt(mon), 0);
+    where.date = { gte: start, lte: end };
   } else if (from && to) {
     where.date = { gte: new Date(from), lte: new Date(to) };
   }
 
   try {
-    const records = await prisma.attendance.findMany({
-      where,
-      include: { user: true },
-      orderBy: { date: "desc" },
-    });
-    res.json({ records });
+    const [records, summary] = await Promise.all([
+      prisma.attendance.findMany({
+        where,
+        include: { user: true },
+        orderBy: { date: "desc" },
+      }),
+      prisma.attendance.groupBy({
+        by: ['status'],
+        where,
+        _count: { id: true }
+      })
+    ]);
+      res.json({ records, summary });
   } catch (err) {
     console.error("Error fetching attendance records:", err);
     res.status(500).json({ error: "Failed to fetch attendance records" });
   }
 });
-app.post("/api/attendance", auth, async (req, res) => {
-  const { userId, status, date, action } = req.body;
-  const targetUserId = userId || req.user.id;
-  const day = date ? new Date(date) : new Date();
-  const isoDay = new Date(day.toISOString().slice(0, 10));
+app.post("/api/attendance/punch", auth, async (req, res) => {
+  const { action } = req.body; // 'checkin' or 'checkout'
+  if (!['checkin', 'checkout'].includes(action)) return res.status(400).json({ error: "action must be 'checkin' or 'checkout'" });
 
-  // Employee self checkin/checkout
+  const now = new Date();
+  const isoDay = new Date(now.toISOString().slice(0, 10));
+  const targetUserId = req.user.id; // Self punch only
+
+  // Time window check
+  const hour = now.getHours();
+  if (action === 'checkin' && (hour < 8 || hour > 11)) {
+    return res.status(400).json({ error: "Punch-in allowed only 8AM-11AM" });
+  }
+
   try {
-    if (action === "checkin" || action === "checkout") {
-      const statusLabel = "Present"; // Assuming checkin/checkout implies presence
-      const data = {
-        userId: targetUserId,
-        date: isoDay,
-        status: statusLabel,
-        checkInAt: action === "checkin" ? new Date() : undefined,
-        checkOutAt: action === "checkout" ? new Date() : undefined,
-      };
+    const existing = await prisma.attendance.findUnique({
+      where: { userId_date: { userId: targetUserId, date: isoDay } }
+    });
+
+    if (action === 'checkin') {
+      if (existing?.checkInAt) return res.status(400).json({ error: "Already punched in today" });
+      
+      const isLate = hour > 9 || (hour === 9 && now.getMinutes() > 30);
+      const status = isLate ? 'Late' : 'Present';
+      
       const record = await prisma.attendance.upsert({
         where: { userId_date: { userId: targetUserId, date: isoDay } },
-        update: {
-          status: data.status,
-          checkInAt: data.checkInAt ?? undefined,
-          checkOutAt: data.checkOutAt ?? undefined,
-        },
-        create: data,
+        update: { checkInAt: now, status },
+        create: { 
+          userId: targetUserId, 
+          date: isoDay, 
+          status,
+          checkInAt: now 
+        }
       });
-      return res.json({ record });
-    }
+      res.json({ record, message: `Punched ${action} ${isLate ? '(Late)' : '(On time)'}` });
+    } else { // checkout
+      if (!existing || !existing.checkInAt) return res.status(400).json({ error: "Must punch in first" });
+      if (existing.checkOutAt) return res.status(400).json({ error: "Already punched out today" });
 
-    // Admin sets status
-    if (!status) return res.status(400).json({ error: "status required" });
-    const record = await prisma.attendance.upsert({
-      where: { userId_date: { userId: targetUserId, date: isoDay } },
-      update: { status },
-      create: { userId: targetUserId, date: isoDay, status },
+      const record = await prisma.attendance.update({
+        where: { userId_date: { userId: targetUserId, date: isoDay } },
+        data: { checkOutAt: now }
+      });
+      res.json({ record, message: 'Punched out successfully' });
+    }
+  } catch (err) {
+    console.error("Attendance punch error:", err);
+    res.status(500).json({ error: "Failed to process punch" });
+  }
+});
+
+// Admin override (separate endpoint)
+app.put("/api/attendance/:id", auth, authorizeRoles('admin', 'root'), async (req, res) => {
+  const { status, checkInAt, checkOutAt } = req.body;
+  try {
+    const record = await prisma.attendance.update({
+      where: { id: req.params.id },
+      data: { status, checkInAt, checkOutAt }
     });
     res.json({ record });
   } catch (err) {
-    console.error("Error processing attendance:", err);
-    res.status(500).json({ error: "Failed to process attendance" });
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Attendance record not found' });
+    res.status(500).json({ error: "Failed to update attendance" });
   }
 });
 
@@ -553,7 +884,7 @@ app.put("/api/notifications/:id/read", auth, async (req, res) => {
 });
 
 // Payroll
-app.get("/api/payroll", auth, async (req, res) => {
+app.get("/api/payroll", auth, authorizeRoles('hr', 'admin', 'root'), async (req, res) => {
   const { employeeId, month } = req.query;
   const where = {};
   if (employeeId) where.employeeId = employeeId;
@@ -570,7 +901,7 @@ app.get("/api/payroll", auth, async (req, res) => {
   }
 });
 
-app.post("/api/payroll/generate", auth, async (req, res) => {
+app.post("/api/payroll/generate", auth, authorizeRoles('hr', 'admin', 'root'), async (req, res) => {
   const { employeeId, month, baseSalary, deductions = 0 } = req.body;
   if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
   const employee = await prisma.user.findUnique({ where: { id: employeeId } });
@@ -674,6 +1005,62 @@ app.put("/api/reviews/:id", auth, async (req, res) => {
     console.error("Error updating review:", err);
     res.status(500).json({ error: "Failed to update review" });
   }
+});
+
+app.get("/api/stats", auth, async (req, res) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const [
+    totalUsers,
+    todayAttendance, 
+    todayPresent,
+    todayAbsent,
+    pendingLeaves,
+    approvedLeaves,
+    developers,
+    latePunches,
+    weeklyAttendance
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.attendance.count({ where: { date: { gte: today, lt: tomorrow } } }),
+    prisma.attendance.count({ where: { 
+      date: { gte: today, lt: tomorrow },
+      status: "Present" 
+    } }),
+    prisma.attendance.count({ where: { 
+      date: { gte: today, lt: tomorrow },
+      status: { not: "Present" } 
+    } }),
+    prisma.leave.count({ where: { status: "Pending" } }),
+    prisma.leave.count({ where: { status: "Approved" } }),
+    prisma.user.count({ where: { role: "developer" } }),
+    prisma.attendance.count({ where: { 
+      date: { gte: today, lt: tomorrow },
+      checkInAt: { gt: new Date(today.getTime() + 9*60*60*1000) } // late after 9AM
+    } }),
+    // Weekly attendance average
+    prisma.$queryRaw`
+      SELECT to_char(date, 'Dy') label, COUNT(*)::int value 
+      FROM "Attendance" 
+      WHERE date >= CURRENT_DATE - INTERVAL '6 days'
+      GROUP BY date ORDER BY date
+    `
+  ]);
+
+  res.json({
+    totalUsers,
+    todayAttendance,
+    todayPresent, 
+    todayAbsent,
+    pendingLeaves,
+    approvedLeaves,
+    developers,
+    latePunches,
+    weeklyAttendance,
+  });
 });
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));

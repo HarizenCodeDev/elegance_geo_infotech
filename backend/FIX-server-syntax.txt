@@ -1,0 +1,18 @@
+**Backend Syntax Error Fixed**
+
+**Issue:** server.js line 531 - Malformed attendance GET route after export endpoint.
+
+**Exact Problem (lines ~510-540):**
+```
+});  // export route end
+  const { date, from...  // loose code - no app.get wrapper
+```
+
+**Fix Applied:** Added `app.get("/api/attendance", auth, async (req, res) => {` before loose block.
+
+**To Run:**
+1. `cd backend`
+2. `node src/server.js`
+3. Login: root@egi.local / root123
+
+**Test:** Backend starts → Frontend login succeeds → TODO verification complete.
