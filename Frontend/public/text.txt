@@ -1,0 +1,22 @@
+npm create vite@latest
+npm install react-data-table-component styled-components axios react-icons react-router-dom tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+
+create folder inside that folder
+npm init -y
+npm install bcrypt cors express jsonwebtoken mongoose multer nodemon path
+
+create index.js file
+
+add to package.json type module
+
+start nodemon --env-file=.env index.js
+create .env file
+
+MAngodb in terminal
+
+sudo docker exec -it mongodb mongosh
+
+Add User Manualy in userSeeder.js in //servetr
+
+node --env-file=.env index.js
