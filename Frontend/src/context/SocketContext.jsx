@@ -4,7 +4,7 @@ import { useAuth } from "./authContext";
 // Fixed duplicate API_BASE
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-const SocketContext = createContext(null);
+export const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
   const { user, logout } = useAuth();

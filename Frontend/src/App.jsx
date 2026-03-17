@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import AdminDashboard from './pages/AdminDashboard'
 import EmployeeDashboard from './pages/EmployeeDashboard'
 import RootDashboard from './pages/RootDashboard'
 import ChangePassword from './pages/ChangePassword'
 import ForgotPassword from './pages/ForgotPassword'
+import LeaveApproval from '../components/LeaveApproval'
 import { useAuth } from './context/authContext.jsx'
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -22,6 +24,8 @@ function App() {
       <Routes>
         <Route path='/' element={<Navigate to="/login" />} />
         <Route path='/login' element={<Login />} />
+        <Route path='/reset-password' element={<ResetPassword />} />
+        <Route path='/change-password' element={<ChangePassword />} />
 
         <Route
           path='/root-dashboard'

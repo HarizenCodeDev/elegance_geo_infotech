@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useTheme } from "../context/ThemeContext";
+import { useTheme } from "../hooks/useTheme.js";
 import Logo from "/EGlogo.png";
 import ChatWindow from "../components/ChatWindow";
 import AttendanceChart from "../components/AttendanceChart";
@@ -41,8 +41,26 @@ const AdminDashboard = () => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
-  const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addEmployee | chat | announcements
+const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addEmployee | chat | announcements
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [stats, setStats] = useState({});
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get(`${API_BASE}/api/stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setStats(res.data);
+      } catch {
+        // Fallback to empty stats
+      }
+    };
+    loadStats();
+    const interval = setInterval(loadStats, 30000); // refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (user?.avatar || user?.profileImage) {
@@ -222,7 +240,11 @@ const AdminDashboard = () => {
                         className="flex w-full items-center justify-between px-4 py-3 font-medium"
                         onClick={() => {
                           if (section.items.length === 0 && section.title === "Leave Request") {
-                            setCurrentView("leaves");
+                            if (section.title === "Leave Request") {
+                              setCurrentView("leaveApproval");
+                            } else {
+                              setCurrentView("leaves");
+                            }
                             setChatOpen(false);
                             setOpenIndex(null);
                           } else {
@@ -378,6 +400,10 @@ const AdminDashboard = () => {
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
               <GeneratePayslip />
             </section>
+          ) : currentView === "leaveApproval" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <LeaveApproval onBack={() => setCurrentView("leaves")} />
+            </section>
           ) : currentView === "leaves" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
               <LeavesList />
@@ -402,15 +428,14 @@ const AdminDashboard = () => {
             <section className="space-y-6">
               <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr">
                 {[
-                  { label: "Total Present", value: 42, gradient: "from-emerald-400 via-teal-400 to-cyan-400" },
-                  { label: "Total Developers", value: 58, gradient: "from-indigo-400 via-violet-400 to-fuchsia-400" },
-                  { label: "Total Departments", value: 7, gradient: "from-cyan-400 via-blue-400 to-indigo-400" },
-                  { label: "Total Absent", value: 6, gradient: "from-rose-400 via-pink-400 to-orange-300" },
-                  { label: "Leave Requests", value: 5, gradient: "from-amber-400 via-orange-400 to-rose-300" },
-                  { label: "Leave Approved", value: 3, gradient: "from-sky-400 via-cyan-400 to-emerald-300" },
-                  { label: "Leave Rejected", value: 2, gradient: "from-gray-300 via-slate-400 to-slate-600" },
-                  { label: "On-Time Punch", value: 47, gradient: "from-lime-300 via-emerald-300 to-green-400" },
-                  { label: "Late Punch", value: 5, gradient: "from-red-400 via-rose-400 to-orange-400" },
+                  { label: "Total Employees", value: stats.totalUsers || 0, gradient: "from-indigo-400 via-violet-400 to-fuchsia-400" },
+                  { label: "Today Present", value: stats.todayPresent || 0, gradient: "from-emerald-400 via-teal-400 to-cyan-400" },
+                  { label: "Today Absent", value: stats.todayAbsent || 0, gradient: "from-rose-400 via-pink-400 to-orange-300" },
+                  { label: "Leave Requests", value: stats.pendingLeaves || 0, gradient: "from-amber-400 via-orange-400 to-rose-300" },
+                  { label: "Leave Approved", value: stats.approvedLeaves || 0, gradient: "from-sky-400 via-cyan-400 to-emerald-300" },
+                  { label: "Developers", value: stats.developers || 0, gradient: "from-cyan-400 via-blue-400 to-indigo-400" },
+                  { label: "Attendance Today", value: stats.todayAttendance || 0, gradient: "from-lime-300 via-emerald-300 to-green-400" },
+                  { label: "Late Arrivals", value: stats.latePunches || 0, gradient: "from-red-400 via-rose-400 to-orange-400" },
                 ].map((card) => (
                   <div
                     key={card.label}
@@ -433,17 +458,7 @@ const AdminDashboard = () => {
                 ))}
               </div>
 
-              <AttendanceChart
-                data={[
-                  { label: "Mon", value: 52 },
-                  { label: "Tue", value: 54 },
-                  { label: "Wed", value: 50 },
-                  { label: "Thu", value: 56 },
-                  { label: "Fri", value: 55 },
-                  { label: "Sat", value: 48 },
-                  { label: "Sun", value: 46 },
-                ]}
-              />
+              <AttendanceChart data={stats.weeklyAttendance || []} />
             </section>
           )}
         </main>

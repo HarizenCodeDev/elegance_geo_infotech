@@ -34,12 +34,13 @@ const AddEmployeeForm = () => {
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       if (file) fd.append("profileImage", file);
       const token = localStorage.getItem("token");
-      await axios.post(`${API_BASE}/api/employees`, fd, {
+      const response = await axios.post(`${API_BASE}/api/employees`, fd, {
         headers: {
           "Content-Type": "multipart/form-data",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
       });
+      setSuccess(`Employee added! Default password: ${response.data.defaultPassword} (tell user)`);
       setSuccess("Developer added successfully.");
       setForm(emptyForm);
       setFile(null);
