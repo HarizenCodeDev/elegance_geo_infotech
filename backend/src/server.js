@@ -78,11 +78,16 @@ app.post("/api/auth/login", async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(401).json({ error: "Invalid credentials" });
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
-  const token = signToken(user);
-  return res.json({ token, user });
-});
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" }); // Password mismatch
 
+  try {
+    const token = signToken(user);
+    return res.json({ token, user });
+  } catch (err) {
+    console.error("Error signing token:", err);
+    return res.status(500).json({ error: "Authentication failed" });
+  }
+});
 app.get("/api/auth/me", auth, async (req, res) => {
   res.json({ user: req.user });
 });
@@ -91,64 +96,94 @@ app.put("/api/auth/change-password", auth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   if (!oldPassword || !newPassword) return res.status(400).json({ error: "Missing passwords" });
   const ok = await bcrypt.compare(oldPassword, req.user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Old password incorrect" });
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
-  res.json({ message: "Password changed" });
-});
+  if (!ok) return res.status(401).json({ error: "Old password incorrect" }); // Old password mismatch
 
+  try {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
+    res.json({ message: "Password changed" });
+  } catch (err) {
+    console.error("Error changing password:", err);
+    res.status(500).json({ error: "Failed to change password" });
+  }
+});
 app.post("/api/auth/forgot-password", async (req, res) => {
   // Stub: in real app, notify admin/root; here we just respond success
   res.json({ message: "Request received" });
 });
-
 app.post("/api/auth/avatar", auth, upload.single("avatar"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "File required" });
-  const url = `/uploads/${req.file.filename}`;
-  await prisma.user.update({ where: { id: req.user.id }, data: { profileImage: url } });
-  res.json({ avatarUrl: url });
+  try {
+    const url = `/uploads/${req.file.filename}`;
+    await prisma.user.update({ where: { id: req.user.id }, data: { profileImage: url } });
+    res.json({ avatarUrl: url });
+  } catch (err) {
+    console.error("Error updating avatar:", err);
+    res.status(500).json({ error: "Failed to upload avatar" });
+  }
 });
-
 // Employees
 app.get("/api/employees", auth, async (req, res) => {
-  const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
-  res.json({ users });
+  try {
+    const users = await prisma.user.findMany({ orderBy: { createdAt: "desc" } });
+    res.json({ users });
+  } catch (err) {
+    console.error("Error fetching employees:", err);
+    res.status(500).json({ error: "Failed to fetch employees" });
+  }
 });
-
 app.post("/api/employees", auth, async (req, res) => {
   const data = req.body;
   if (!data.email || !data.password || !data.name)
     return res.status(400).json({ error: "name, email, password required" });
-  const passwordHash = await bcrypt.hash(data.password, 10);
-  const role = roles.includes(data.role) ? data.role : "developer";
-  const user = await prisma.user.create({
-    data: {
-      name: data.name,
-      email: data.email,
-      passwordHash,
-      role,
-      employeeId: data.employeeId || null,
-      dob: data.dob ? new Date(data.dob) : null,
-      gender: data.gender || null,
-      maritalStatus: data.maritalStatus || null,
-      department: data.department || null,
-      salary: data.salary ? Number(data.salary) : null,
-      profileImage: data.profileImage || null,
-    },
-  });
-  res.json({ user });
-});
 
+  // Basic validation for other fields
+  if (data.dob && isNaN(new Date(data.dob).getTime())) return res.status(400).json({ error: "Invalid date of birth format" });
+  if (data.salary && isNaN(Number(data.salary))) return res.status(400).json({ error: "Invalid salary format" });
+
+  try {
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const role = roles.includes(data.role) ? data.role : "developer";
+    const user = await prisma.user.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        passwordHash,
+        role,
+        employeeId: data.employeeId || null,
+        dob: data.dob ? new Date(data.dob) : null,
+        gender: data.gender || null,
+        maritalStatus: data.maritalStatus || null,
+        department: data.department || null,
+        salary: data.salary ? Number(data.salary) : null,
+        profileImage: data.profileImage || null,
+      },
+    });
+    res.status(201).json({ user }); // Use 201 for resource creation
+  } catch (err) {
+    if (err.code === 'P2002') { // Unique constraint violation (e.g., duplicate email)
+      return res.status(409).json({ error: `User with email '${data.email}' already exists.` });
+    }
+    console.error("Error creating employee:", err);
+    res.status(500).json({ error: "Failed to create employee" });
+  }
+});
 app.put("/api/employees/:id", auth, async (req, res) => {
   const { id } = req.params;
   const data = { ...req.body };
+
+  if (!id) return res.status(400).json({ error: "Employee ID is required in the URL." });
+
+  // Basic validation for other fields
+  if (data.dob && isNaN(new Date(data.dob).getTime())) return res.status(400).json({ error: "Invalid date of birth format" });
+  if (data.salary && isNaN(Number(data.salary))) return res.status(400).json({ error: "Invalid salary format" });
+
   if (data.password) {
     data.passwordHash = await bcrypt.hash(data.password, 10);
     delete data.password;
   }
-  if (data.dob) data.dob = new Date(data.dob);
-  if (data.salary) data.salary = Number(data.salary);
   if (data.role && !roles.includes(data.role)) delete data.role;
+
   try {
     const user = await prisma.user.update({ where: { id }, data });
     res.json({ user });
@@ -161,38 +196,56 @@ app.put("/api/employees/:id", auth, async (req, res) => {
     res.status(500).json({ error: "An internal server error occurred." });
   }
 });
-
 // Leaves
 app.get("/api/leaves", auth, async (req, res) => {
-  const leaves = await prisma.leave.findMany({
-    include: { user: true },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json({ leaves });
+  try {
+    const leaves = await prisma.leave.findMany({
+      include: { user: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ leaves });
+  } catch (err) {
+    console.error("Error fetching leaves:", err);
+    res.status(500).json({ error: "Failed to fetch leaves" });
+  }
 });
-
 app.post("/api/leaves", auth, async (req, res) => {
   const { type, from, to, description } = req.body;
-  const leave = await prisma.leave.create({
-    data: {
-      userId: req.user.id,
-      type: type || "General",
-      from: from ? new Date(from) : null,
-      to: to ? new Date(to) : null,
-      description: description || null,
-    },
-  });
-  res.json({ leave });
-});
+  if (from && isNaN(new Date(from).getTime())) return res.status(400).json({ error: "Invalid 'from' date format" });
+  if (to && isNaN(new Date(to).getTime())) return res.status(400).json({ error: "Invalid 'to' date format" });
 
+  try {
+    const leave = await prisma.leave.create({
+      data: {
+        userId: req.user.id,
+        type: type || "General",
+        from: from ? new Date(from) : null,
+        to: to ? new Date(to) : null,
+        description: description || null,
+      },
+    });
+    res.status(201).json({ leave });
+  } catch (err) {
+    console.error("Error creating leave request:", err);
+    res.status(500).json({ error: "Failed to create leave request" });
+  }
+});
 app.put("/api/leaves/:id/status", auth, async (req, res) => {
   const { status } = req.body;
   const allowed = ["Pending", "Approved", "Rejected"];
   if (!allowed.includes(status)) return res.status(400).json({ error: "Bad status" });
-  const leave = await prisma.leave.update({ where: { id: req.params.id }, data: { status } });
-  res.json({ leave });
-});
 
+  try {
+    const leave = await prisma.leave.update({ where: { id: req.params.id }, data: { status } });
+    res.json({ leave });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: `Leave request with ID ${req.params.id} not found.` });
+    }
+    console.error("Error updating leave status:", err);
+    res.status(500).json({ error: "Failed to update leave status" });
+  }
+});
 // Attendance
 app.get("/api/attendance", auth, async (req, res) => {
   const { date, from, to } = req.query;
@@ -203,14 +256,19 @@ app.get("/api/attendance", auth, async (req, res) => {
   } else if (from && to) {
     where.date = { gte: new Date(from), lte: new Date(to) };
   }
-  const records = await prisma.attendance.findMany({
-    where,
-    include: { user: true },
-    orderBy: { date: "desc" },
-  });
-  res.json({ records });
-});
 
+  try {
+    const records = await prisma.attendance.findMany({
+      where,
+      include: { user: true },
+      orderBy: { date: "desc" },
+    });
+    res.json({ records });
+  } catch (err) {
+    console.error("Error fetching attendance records:", err);
+    res.status(500).json({ error: "Failed to fetch attendance records" });
+  }
+});
 app.post("/api/attendance", auth, async (req, res) => {
   const { userId, status, date, action } = req.body;
   const targetUserId = userId || req.user.id;
