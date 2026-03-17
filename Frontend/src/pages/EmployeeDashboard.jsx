@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import Logo from "../assets/Logo/EGlogo.png";
+import Logo from "/EGlogo.png";
 import ChatWindow from "../components/ChatWindow";
 import EmployeeLeaves from "../components/EmployeeLeaves";
 import EmployeeAttendanceView from "../components/EmployeeAttendanceView";
@@ -48,7 +48,8 @@ const EmployeeDashboard = () => {
 
     if (currentView === "leaves") return <EmployeeLeaves />;
     if (currentView === "attendance") return <EmployeeAttendanceView />;
-    if (currentView === "announcements") return <EmployeeAnnouncements />;
+  if (currentView === "reviews") return <ReviewsList title="My Reviews" filterRevieweeId={user.id} />;
+  if (currentView === "announcements") return <EmployeeAnnouncements />;
 
     // dashboard
     return (
@@ -153,6 +154,15 @@ const EmployeeDashboard = () => {
               }}
             >
               Attendance
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
+              onClick={() => {
+                setCurrentView("reviews");
+                setChatOpen(false);
+              }}
+            >
+              My Reviews
             </button>
             <button
               className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import NotificationsList from "./NotificationsList";
 
 const sampleMessages = [
   { id: 1, author: "Alex", text: "Hey team, any updates?" },
@@ -7,7 +8,8 @@ const sampleMessages = [
 ];
 
 const ChatPanel = ({ variant = "button" }) => {
-  const [open, setOpen] = useState(false);
+  const [openChat, setOpenChat] = useState(false);
+  const [openNotifications, setOpenNotifications] = useState(false);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState(sampleMessages);
 
@@ -20,10 +22,10 @@ const ChatPanel = ({ variant = "button" }) => {
 
   const isNav = variant === "nav";
 
-  const button = (
+  const chatButton = (
     <button
       type="button"
-      onClick={() => setOpen((p) => !p)}
+      onClick={() => setOpenChat((p) => !p)}
       className={
         isNav
           ? "flex w-full items-center justify-between px-4 py-3 font-medium text-slate-200"
@@ -35,7 +37,27 @@ const ChatPanel = ({ variant = "button" }) => {
         <span>Chat</span>
       </span>
       {isNav && (
-        <span className={`text-slate-400 transition ${open ? "rotate-90" : ""}`}>&#8250;</span>
+        <span className={`text-slate-400 transition ${openChat ? "rotate-90" : ""}`}>&#8250;</span>
+      )}
+    </button>
+  );
+
+  const notificationButton = (
+    <button
+      type="button"
+      onClick={() => setOpenNotifications((p) => !p)}
+      className={
+        isNav
+          ? "flex w-full items-center justify-between px-4 py-3 font-medium text-slate-200 mt-1"
+          : "flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-orange-500 transition mt-2"
+      }
+    >
+      <span className="flex items-center gap-2">
+        <span className="text-lg leading-none">🔔</span>
+        <span>Notifications</span>
+      </span>
+      {isNav && (
+        <span className={`text-slate-400 transition ${openNotifications ? "rotate-90" : ""}`}>&#8250;</span>
       )}
     </button>
   );
@@ -71,36 +93,36 @@ const ChatPanel = ({ variant = "button" }) => {
 
   if (isNav) {
     return (
-      <div className="bg-slate-800 rounded-lg border border-slate-700">
-        {button}
-        <div
-          className={`bg-slate-900/40 border-t border-slate-700 transition-all ${
-            open ? "max-h-80 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
-          }`}
-        >
-          {panelBody}
+      <div className="space-y-2">
+        {chatButton}
+        <div className={`bg-slate-900/40 border border-slate-700 rounded-lg transition-all ${
+          openChat ? "max-h-80 opacity-100 p-4" : "max-h-0 opacity-0 overflow-hidden"
+        }`}>
+          {openChat && panelBody}
         </div>
+        {notificationButton}
+        {openNotifications && (
+          <div className="bg-slate-900 border border-slate-700 rounded-lg">
+            <NotificationsList onClose={() => setOpenNotifications(false)} />
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="relative">
-      {button}
-
-      {open && (
-        <div className="absolute right-0 mt-3 w-80 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-            <div className="text-sm font-semibold text-white">Team Chat</div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-slate-400 hover:text-white text-lg leading-none"
-            >
-              ×
-            </button>
-          </div>
+    <div className="space-y-2">
+      {chatButton}
+      {openChat && (
+        <div className="w-full rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-4">
+          <div className="text-sm font-semibold text-white mb-3">Team Chat</div>
           {panelBody}
+        </div>
+      )}
+      {notificationButton}
+      {openNotifications && (
+        <div className="w-full rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+          <NotificationsList />
         </div>
       )}
     </div>

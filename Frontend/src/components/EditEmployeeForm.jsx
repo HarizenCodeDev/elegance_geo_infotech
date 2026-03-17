@@ -52,7 +52,7 @@ const EditEmployeeForm = ({ employee, onDone }) => {
       });
       if (file) fd.append("profileImage", file);
       const token = localStorage.getItem("token");
-      await axios.put(`${API_BASE}/api/employees/${employee._id}`, fd, {
+      await axios.put(`${API_BASE}/api/employees/${employee.id}`, fd, {
         headers: {
           "Content-Type": "multipart/form-data",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

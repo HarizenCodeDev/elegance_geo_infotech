@@ -9,6 +9,11 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
+import http from "http";
+import { Server } from "socket.io";
+import cors from "cors";
+import PDFDocument from "pdfkit";
+import { v4 as uuidv4 } from "uuid";
 
 dotenv.config();
 
@@ -23,12 +28,22 @@ if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
 const prisma = new PrismaClient();
 const app = express();
-app.use(cors());
+
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST"]
+  }
+});
 app.use(express.json());
 app.use(morgan("dev"));
 app.use("/uploads", express.static(STORAGE_DIR));
 
 const upload = multer({ dest: STORAGE_DIR });
+
+const uploadPayslip = multer({ dest: path.join(STORAGE_DIR, "payslips") });
+if (!fs.existsSync(path.join(STORAGE_DIR, "payslips"))) fs.mkdirSync(path.join(STORAGE_DIR, "payslips"), { recursive: true });
 
 const roles = ["developer", "teamlead", "manager", "hr", "admin", "root"];
 
@@ -132,7 +147,7 @@ app.get("/api/employees", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 });
-app.post("/api/employees", auth, async (req, res) => {
+app.post("/api/employees", auth, upload.single("profileImage"), async (req, res) => {
   const data = req.body;
   if (!data.email || !data.password || !data.name)
     return res.status(400).json({ error: "name, email, password required" });
@@ -140,6 +155,9 @@ app.post("/api/employees", auth, async (req, res) => {
   // Basic validation for other fields
   if (data.dob && isNaN(new Date(data.dob).getTime())) return res.status(400).json({ error: "Invalid date of birth format" });
   if (data.salary && isNaN(Number(data.salary))) return res.status(400).json({ error: "Invalid salary format" });
+
+  if (data.dob) data.dob = new Date(data.dob + 'T00:00:00.000Z');
+  if (data.salary) data.salary = Number(data.salary);
 
   try {
     const passwordHash = await bcrypt.hash(data.password, 10);
@@ -168,7 +186,7 @@ app.post("/api/employees", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to create employee" });
   }
 });
-app.put("/api/employees/:id", auth, async (req, res) => {
+app.put("/api/employees/:id", auth, upload.single("profileImage"), async (req, res) => {
   const { id } = req.params;
   const data = { ...req.body };
 
@@ -177,6 +195,9 @@ app.put("/api/employees/:id", auth, async (req, res) => {
   // Basic validation for other fields
   if (data.dob && isNaN(new Date(data.dob).getTime())) return res.status(400).json({ error: "Invalid date of birth format" });
   if (data.salary && isNaN(Number(data.salary))) return res.status(400).json({ error: "Invalid salary format" });
+
+  if (data.dob) data.dob = new Date(data.dob + 'T00:00:00.000Z');
+  if (data.salary) data.salary = Number(data.salary);
 
   if (data.password) {
     data.passwordHash = await bcrypt.hash(data.password, 10);
@@ -237,6 +258,18 @@ app.put("/api/leaves/:id/status", auth, async (req, res) => {
 
   try {
     const leave = await prisma.leave.update({ where: { id: req.params.id }, data: { status } });
+    if (status === "Approved") {
+      await prisma.notification.create({
+        data: {
+          userId: leave.userId,
+          title: "Leave Approved",
+          body: `Your leave from ${leave.from?.toLocaleDateString()} to ${leave.to?.toLocaleDateString()} has been approved.`,
+          type: 'leave_approved',
+        },
+      });
+      const user = await prisma.user.findUnique({ where: { id: leave.userId } });
+      if (user) io.to(`user:${leave.userId}`).emit('notification', { id: Date.now(), userId: leave.userId, title: "Leave Approved", body: `Your leave from ${leave.from?.toLocaleDateString()} to ${leave.to?.toLocaleDateString()} has been approved.`, type: 'leave_approved', read: false, createdAt: new Date() });
+    }
     res.json({ leave });
   } catch (err) {
     if (err.code === 'P2025') {
@@ -339,11 +372,75 @@ app.post("/api/announcements", auth, async (req, res) => {
         createdById: req.user.id,
       },
     });
+    // Send notifications to audience
+    const where = {};
+    if (audienceRoles[0] !== "all") where.role = { in: audienceRoles };
+    if (audienceDepartments.length) where.department = { in: audienceDepartments };
+    const targets = await prisma.user.findMany({ where });
+    for (const target of targets) {
+      await prisma.notification.create({
+        data: {
+          userId: target.id,
+          title: `New Announcement: ${title}`,
+          body: message.slice(0, 100) + '...',
+          type: 'new_announcement',
+        },
+      });
+      io.to(`user:${target.id}`).emit('notification', { id: Date.now(), userId: target.id, title: `New Announcement: ${title}`, body: message.slice(0, 100) + '...', type: 'new_announcement', read: false, createdAt: new Date() });
+    }
     res.json({ announcement });
   } catch (err) {
     console.error("Error creating announcement:", err);
     res.status(500).json({ error: "Failed to create announcement" });
   }
+});
+
+// Socket.io logic
+const authSocket = async (socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error("Missing token"));
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) return next(new Error("User not found"));
+    socket.user = user;
+    socket.join(`user:${user.id}`);
+    console.log(`Socket auth OK for ${user.name}`);
+    next();
+  } catch {
+    next(new Error("Invalid token"));
+  }
+};
+
+io.use(authSocket);
+
+io.on("connection", (socket) => {
+  console.log(`Socket connected: ${socket.user.id}`);
+
+  socket.on("joinChat", (roomKey) => socket.join(roomKey));
+
+  socket.on("chat message", async ({ roomKey, text }) => {
+    if (!text.trim()) return;
+    const message = await prisma.chatMessage.create({
+      data: {
+        type: "direct",
+        contactId: roomKey,
+        text: text.trim(),
+        fromId: socket.user.id,
+        toUserId: roomKey.includes(socket.user.id) ? roomKey.replace(socket.user.id + ':', '').replace(':', '') : null,
+      },
+      include: { from: true },
+    });
+    const msgData = {
+      id: message.id,
+      text: message.text,
+      from: { id: message.from.id, name: message.from.name },
+      createdAt: message.createdAt,
+    };
+    io.to(roomKey).emit("chat message", msgData);
+  });
+
+  socket.on("disconnect", () => console.log(`Socket disconnected: ${socket.user?.id}`));
 });
 
 // Chat helpers
@@ -400,10 +497,183 @@ app.post("/api/chat", auth, async (req, res) => {
         author: message.from.name,
         from: { _id: message.from.id, name: message.from.name },
       },
+ls
     });
   } catch (err) {
     console.error("Error creating chat message:", err);
     res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+// Notifications
+app.get("/api/notifications", auth, async (req, res) => {
+  const { read } = req.query;
+  const where = { userId: req.user.id };
+  if (read !== undefined) where.read = read === 'true';
+  try {
+    const notifications = await prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+app.post("/api/notifications", auth, async (req, res) => {
+  const { title, body, type, targetUserId } = req.body;
+  if (!title || !body) return res.status(400).json({ error: 'Title and body required' });
+  try {
+    const notification = await prisma.notification.create({
+      data: {
+        userId: targetUserId || req.user.id,
+        title,
+        body,
+        type,
+      }
+    });
+    // Emit to target user room
+    io.to(`user:${notification.userId}`).emit('notification', notification);
+    res.status(201).json({ notification });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
+app.put("/api/notifications/:id/read", auth, async (req, res) => {
+  try {
+    const notification = await prisma.notification.update({
+      where: { id: req.params.id },
+      data: { read: true }
+    });
+    res.json({ notification });
+  } catch (err) {
+    res.status(404).json({ error: 'Notification not found' });
+  }
+});
+
+// Payroll
+app.get("/api/payroll", auth, async (req, res) => {
+  const { employeeId, month } = req.query;
+  const where = {};
+  if (employeeId) where.employeeId = employeeId;
+  if (month) where.month = month;
+  try {
+    const payrolls = await prisma.payroll.findMany({
+      where,
+      include: { employee: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ payrolls });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch payroll' });
+  }
+});
+
+app.post("/api/payroll/generate", auth, async (req, res) => {
+  const { employeeId, month, baseSalary, deductions = 0 } = req.body;
+  if (!employeeId || !month) return res.status(400).json({ error: 'employeeId and month required' });
+  const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+  const netPay = (baseSalary || employee.salary || 0) - parseFloat(deductions);
+  const filename = `payslip-${uuidv4()}.pdf`;
+  const filePath = path.join(STORAGE_DIR, 'payslips', filename);
+  const doc = new PDFDocument();
+  const writeStream = fs.createWriteStream(filePath);
+  doc.pipe(writeStream);
+  doc.fontSize(24).text('EGI Payslip', 50, 50);
+  doc.fontSize(12).text(`Employee: ${employee.name}`, 50, 100);
+  doc.text(`ID: ${employee.employeeId || 'N/A'}`, 50, 120);
+  doc.text(`Month: ${month}`, 50, 140);
+  doc.text(`Base Salary: $${baseSalary || employee.salary || 0}`, 50, 160);
+  doc.text(`Deductions: $${deductions}`, 50, 180);
+  doc.text(`Net Pay: $${netPay.toFixed(2)}`, 50, 200, { underline: true });
+  doc.end();
+  writeStream.on('finish', async () => {
+    const payroll = await prisma.payroll.upsert({
+      where: { employeeId_month: { employeeId, month } },
+      update: { baseSalary: parseFloat(baseSalary || employee.salary || 0), deductions: parseFloat(deductions), netPay, pdfPath: `/uploads/payslips/${filename}` },
+      create: { employeeId, month, baseSalary: parseFloat(baseSalary || employee.salary || 0), deductions: parseFloat(deductions), netPay, pdfPath: `/uploads/payslips/${filename}` }
+    });
+    // Notify employee
+    io.to(`user:${employeeId}`).emit('notification', {
+      id: Date.now(),
+      userId: employeeId,
+      title: 'Payslip Ready',
+      body: `Your payslip for ${month} is available.`,
+      type: 'payroll_ready',
+      read: false,
+      createdAt: new Date()
+    });
+    res.json({ payroll });
+  });
+});
+
+// Performance Reviews
+app.get("/api/reviews", auth, async (req, res) => {
+  const { revieweeId } = req.query;
+  const where = revieweeId ? { revieweeId } : {};
+  if (req.user.role !== 'root' && req.user.role !== 'admin' && req.user.role !== 'hr') {
+    where.reviewerId = req.user.id; // Own reviews
+  }
+  try {
+    const reviews = await prisma.review.findMany({
+      where,
+      include: {
+        reviewee: { select: { id: true, name: true, department: true } },
+        reviewer: { select: { id: true, name: true, role: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ reviews });
+  } catch (err) {
+    console.error("Error fetching reviews:", err);
+    res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+
+app.post("/api/reviews", auth, async (req, res) => {
+  const { revieweeId, rating, feedback, reviewDate } = req.body;
+  if (!revieweeId || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: "Valid revieweeId and rating (1-5) required" });
+  if (revieweeId === req.user.id) return res.status(400).json({ error: "Cannot review self" });
+  const reviewee = await prisma.user.findUnique({ where: { id: revieweeId } });
+  if (!reviewee) return res.status(404).json({ error: "Reviewee not found" });
+  // Role check: manager/hr can review
+  if (!['manager', 'hr', 'admin', 'root'].includes(req.user.role)) return res.status(403).json({ error: "Insufficient permissions" });
+  try {
+    const review = await prisma.review.create({
+      data: {
+        revieweeId,
+        reviewerId: req.user.id,
+        rating: Number(rating),
+        feedback,
+        reviewDate: reviewDate ? new Date(reviewDate) : new Date(),
+      }
+    });
+    res.status(201).json({ review });
+  } catch (err) {
+    console.error("Error creating review:", err);
+    res.status(500).json({ error: "Failed to create review" });
+  }
+});
+
+app.put("/api/reviews/:id", auth, async (req, res) => {
+  const { id } = req.params;
+  const { rating, feedback, reviewDate } = req.body;
+  if (rating && (rating < 1 || rating > 5)) return res.status(400).json({ error: "Rating must be 1-5" });
+  try {
+    const review = await prisma.review.findUnique({ where: { id } });
+    if (!review) return res.status(404).json({ error: "Review not found" });
+    if (review.reviewerId !== req.user.id && !['admin', 'root'].includes(req.user.role)) return res.status(403).json({ error: "Not authorized" });
+    const updated = await prisma.review.update({
+      where: { id },
+      data: { rating: Number(rating), feedback, reviewDate: reviewDate ? new Date(reviewDate) : review.reviewDate }
+    });
+    res.json({ review: updated });
+  } catch (err) {
+    console.error("Error updating review:", err);
+    res.status(500).json({ error: "Failed to update review" });
   }
 });
 
@@ -420,7 +690,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "An internal server error occurred." });
 });
 
-app.listen(PORT, async () => {
+httpServer.listen(PORT, async () => {
   await ensureRootSeed();
-  console.log(`API listening on http://localhost:${PORT}`);
+  console.log(`API + Socket.io listening on http://localhost:${PORT}`);
 });

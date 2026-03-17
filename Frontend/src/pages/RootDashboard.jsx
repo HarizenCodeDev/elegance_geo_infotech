@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import Logo from "../assets/Logo/EGlogo.png";
+import Logo from "/EGlogo.png";
 import ChatWindow from "../components/ChatWindow";
 import AttendanceChart from "../components/AttendanceChart";
 import { useAuth } from "../context/authContext";

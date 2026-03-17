@@ -30,7 +30,7 @@ const TableSection = ({ title, rows, showPosition, onView, onEdit }) => (
             </tr>
           )}
           {rows.map((emp, idx) => (
-            <tr key={emp._id || idx} className="border-t border-slate-800">
+            <tr key={emp.id || idx} className="border-t border-slate-800">
               <td className="px-3 py-2">{idx + 1}</td>
               <td className="px-3 py-2">
                 <div className="h-10 w-10 rounded-full bg-slate-700 overflow-hidden">

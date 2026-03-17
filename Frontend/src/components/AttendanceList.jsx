@@ -30,12 +30,12 @@ const AttendanceList = () => {
 
         const statusByUser = {};
         (attRes.data?.records || []).forEach((r) => {
-          statusByUser[r.user?._id] = r.status;
+          statusByUser[r.user?.id] = r.status;
         });
 
         const withStatus = (usersRes.data?.users || []).map((u) => ({
           ...u,
-          attendanceStatus: statusByUser[u._id] || "Pending",
+          attendanceStatus: statusByUser[u.id] || "Pending",
         }));
         setRows(withStatus);
       } catch (err) {
@@ -59,7 +59,7 @@ const AttendanceList = () => {
         { userId: id, status, date },
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
-      setRows((prev) => prev.map((r) => (r._id === id ? { ...r, attendanceStatus: status } : r)));
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, attendanceStatus: status } : r)));
     } catch (err) {
       setError(err.response?.data?.error || err.message || "Failed to update attendance");
     }
@@ -100,7 +100,7 @@ const AttendanceList = () => {
               </tr>
             )}
             {rows.map((emp, idx) => (
-              <tr key={emp._id || idx} className="border-t border-slate-800">
+              <tr key={emp.id || idx} className="border-t border-slate-800">
                 <td className="px-3 py-2">{idx + 1}</td>
                 <td className="px-3 py-2">
                   <div className="h-10 w-10 rounded-full bg-slate-700 overflow-hidden">
@@ -120,13 +120,13 @@ const AttendanceList = () => {
                     <div className="flex items-center gap-2">
                       <button
                         className={`text-xs ${emp.attendanceStatus === "Present" ? "text-emerald-300" : "text-emerald-400 hover:text-white"}`}
-                        onClick={() => setStatus(emp._id, "Present")}
+                        onClick={() => setStatus(emp.id, "Present")}
                       >
                         Present
                       </button>
                       <button
                         className={`text-xs ${emp.attendanceStatus === "Absent" ? "text-rose-300" : "text-rose-400 hover:text-white"}`}
-                        onClick={() => setStatus(emp._id, "Absent")}
+                        onClick={() => setStatus(emp.id, "Absent")}
                       >
                         Absent
                       </button>

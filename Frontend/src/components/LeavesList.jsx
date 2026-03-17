@@ -1,259 +1,81 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { useAuth } from "../context/authContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const statusOptions = ["All", "Pending", "Approved", "Rejected"];
 
 const LeavesList = () => {
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [search, setSearch] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const { user } = useAuth();
-  const canApprove = ["admin", "manager", "root"].includes(user?.role);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_BASE}/api/leaves`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const mapped =
-        res.data?.leaves?.map((l) => ({
-          id: l._id,
-          empId: l.user?.employeeId || "NA",
-          name: l.user?.name || "Unknown",
-          type: l.type,
-          dept: l.user?.department || "-",
-          days: l.from && l.to ? Math.max(1, (new Date(l.to) - new Date(l.from)) / 86400000 + 1) : 1,
-          status: l.status,
-        })) || [];
-      setRows(mapped);
-    } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to load leaves");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    type: "",
-    from: "",
-    to: "",
-    description: "",
-  });
-
-  const filtered = useMemo(() => {
-    return rows.filter((l) => {
-      const matchStatus = statusFilter === "All" ? true : l.status === statusFilter;
-      const matchSearch =
-        l.empId.toLowerCase().includes(search.toLowerCase()) ||
-        l.name.toLowerCase().includes(search.toLowerCase());
-      return matchStatus && matchSearch;
-    });
-  }, [statusFilter, search, rows]);
-
-  const updateStatus = async (id, status) => {
-    try {
-      const token = localStorage.getItem("token");
-      await axios.put(
-        `${API_BASE}/api/leaves/${id}/status`,
-        { status },
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-    } catch (err) {
-      setError(err.response?.data?.error || err.message || "Failed to update status");
-    }
-  };
+    const fetchLeaves = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const token = localStorage.getItem("token");
+        const res = await axios.get(`${API_BASE}/api/leaves`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const formatted = res.data?.leaves?.map((l) => ({
+          id: l.id,
+          empId: l.user?.employeeId || "NA",
+          name: l.user?.name || "NA",
+          type: l.type || "General",
+          from: l.from ? new Date(l.from).toLocaleDateString() : "-",
+          to: l.to ? new Date(l.to).toLocaleDateString() : "-",
+          status: l.status || "Pending",
+          days: l.to && l.from ? Math.ceil((new Date(l.to) - new Date(l.from)) / (1000 * 60 * 60 * 24)) + 1 : "-",
+        })) || [];
+        setRows(formatted);
+      } catch (err) {
+        setError(err.response?.data?.error || err.message || "Failed to load leaves");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLeaves();
+  }, []);
 
   return (
     <div className="space-y-4">
       <div className="text-center">
-        <h2 className="text-xl font-semibold text-white">Leave Request</h2>
+        <h2 className="text-xl font-semibold text-white">Leave Requests</h2>
       </div>
-
-      {loading && <div className="text-slate-300 text-sm">Loading employees...</div>}
+      {loading && <div className="text-slate-300 text-sm">Loading...</div>}
       {error && <div className="text-rose-400 text-sm">{error}</div>}
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          placeholder="Search by Employee ID or Name"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white w-full sm:w-72"
-        />
-        <div className="flex gap-2">
-          {statusOptions.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                statusFilter === s
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-800 text-slate-200 border border-slate-700"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="rounded-lg px-3 py-2 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 space-y-3">
-          <div className="text-sm font-semibold text-white">New Leave Request</div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-xs text-slate-300">Leave Type</label>
-              <input
-                value={form.type}
-                onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-sm"
-                placeholder="e.g. Sick, Casual"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-slate-300">From Date</label>
-              <input
-                type="date"
-                value={form.from}
-                onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-slate-300">To Date</label>
-              <input
-                type="date"
-                value={form.to}
-                onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-sm"
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-slate-300">Description</label>
-            <textarea
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white text-sm"
-              placeholder="Reason for leave..."
-            />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="rounded-lg px-3 py-2 text-sm font-semibold bg-slate-700 text-white hover:bg-slate-600"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const token = localStorage.getItem("token");
-                  await axios.post(
-                    `${API_BASE}/api/leaves`,
-                    { type: form.type, from: form.from, to: form.to, description: form.description },
-                    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-                  );
-                  setShowForm(false);
-                  setForm({ type: "", from: "", to: "", description: "" });
-                  setStatusFilter("All");
-                  // refresh list
-                  const res = await axios.get(`${API_BASE}/api/leaves`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
-                  });
-                  const mapped =
-                    res.data?.leaves?.map((l) => ({
-                      id: l._id,
-                      empId: l.user?.employeeId || "NA",
-                      name: l.user?.name || "Unknown",
-                      type: l.type,
-                      dept: l.user?.department || "-",
-                      days: l.from && l.to ? Math.max(1, (new Date(l.to) - new Date(l.from)) / 86400000 + 1) : 1,
-                      status: l.status,
-                    })) || [];
-                  setRows(mapped);
-                } catch (err) {
-                  setError(err.response?.data?.error || err.message || "Failed to submit leave");
-                }
-              }}
-              className="rounded-lg px-3 py-2 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500"
-            >
-              Request Leave
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/60">
         <table className="min-w-full text-sm text-slate-200">
           <thead className="bg-slate-800 text-xs uppercase tracking-wide text-slate-400">
             <tr>
-              <th className="px-3 py-2 text-left">S No</th>
-              <th className="px-3 py-2 text-left">Emp ID</th>
-              <th className="px-3 py-2 text-left">Name</th>
-              <th className="px-3 py-2 text-left">Leave Type</th>
-              <th className="px-3 py-2 text-left">Department</th>
-              <th className="px-3 py-2 text-left">Days</th>
-              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-4 py-2 text-left">S No</th>
+              <th className="px-4 py-2 text-left">Employee ID</th>
+              <th className="px-4 py-2 text-left">Name</th>
+              <th className="px-4 py-2 text-left">Type</th>
+              <th className="px-4 py-2 text-left">From</th>
+              <th className="px-4 py-2 text-left">To</th>
+              <th className="px-4 py-2 text-left">Days</th>
+              <th className="px-4 py-2 text-left">Status</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-slate-400">
-                  No requests found
-                </td>
-              </tr>
-            )}
-            {filtered.map((l, idx) => (
-              <tr key={l.id} className="border-t border-slate-800">
-                <td className="px-3 py-2">{idx + 1}</td>
-                <td className="px-3 py-2">{l.empId}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{l.name}</td>
-                <td className="px-3 py-2">{l.type}</td>
-                <td className="px-3 py-2">{l.dept}</td>
-                <td className="px-3 py-2">{l.days}</td>
-                <td className="px-3 py-2">
-                  {l.status === "Pending" && canApprove ? (
-                    <div className="flex gap-2">
-                      <button
-                        className="text-emerald-400 hover:text-white text-xs"
-                        onClick={() => updateStatus(l.id, "Approved")}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="text-rose-400 hover:text-white text-xs"
-                        onClick={() => updateStatus(l.id, "Rejected")}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  ) : (
-                    l.status
-                  )}
+            {rows.map((row, idx) => (
+              <tr key={row.id} className="border-t border-slate-800 hover:bg-slate-800/50">
+                <td className="px-4 py-3">{idx + 1}</td>
+                <td className="px-4 py-3">{row.empId}</td>
+                <td className="px-4 py-3">{row.name}</td>
+                <td className="px-4 py-3">{row.type}</td>
+                <td className="px-4 py-3">{row.from}</td>
+                <td className="px-4 py-3">{row.to}</td>
+                <td className="px-4 py-3">{row.days}</td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    row.status === "Approved" ? "bg-emerald-500/20 text-emerald-300" :
+                    row.status === "Rejected" ? "bg-rose-500/20 text-rose-300" :
+                    "bg-amber-500/20 text-amber-300"
+                  }`}>
+                    {row.status}
+                  </span>
                 </td>
               </tr>
             ))}

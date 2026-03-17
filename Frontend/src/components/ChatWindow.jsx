@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useAuth } from "../context/authContext";
-import axios from "axios";
+import { useSocket } from "../context/SocketContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -8,16 +8,17 @@ const directContactsStatic = [];
 
 const groupContacts = [
   { id: "grp-hr", name: "HR", allowedRoles: ["admin", "manager", "root"] },
-  { id: "grp-bd", name: "Buisness Development", allowedRoles: ["admin", "manager", "root", "developer", "teamlead"] },
-  { id: "grp-dev", name: "Development", allowedRoles: ["teamlead", "developer", "root"] }, // excludes HR/admin/manager per request
+  { id: "grp-bd", name: "Business Development", allowedRoles: ["admin", "manager", "root", "developer", "teamlead"] },
+  { id: "grp-dev", name: "Development", allowedRoles: ["teamlead", "developer", "root"] },
   { id: "grp-team1", name: "Team1", allowedRoles: ["teamlead", "developer", "root"] },
   { id: "grp-team2", name: "Team2", allowedRoles: ["teamlead", "developer", "root"] },
 ];
 
 const ChatWindow = () => {
   const { user } = useAuth();
+  const socket = useSocket();
   const role = (user && user.role) || "employee";
-  const userId = user?._id;
+  const userId = user?.id;
   const [directContacts, setDirectContacts] = useState(directContactsStatic);
 
   const visibleGroups = useMemo(
@@ -40,8 +41,8 @@ const ChatWindow = () => {
         });
         const contacts =
           res.data?.users
-            ?.filter((u) => u._id !== userId)
-            .map((u) => ({ id: u._id, name: u.name })) || [];
+            ?.filter((u) => u.id !== userId)
+            .map((u) => ({ id: u.id, name: u.name })) || [];
         setDirectContacts(contacts);
         if (!activeContact && contacts.length > 0) {
           setActiveContact(contacts[0].id);
@@ -53,69 +54,48 @@ const ChatWindow = () => {
       }
     };
     loadContacts();
-  }, [userId, visibleGroups, activeContact]);
+  }, [userId, visibleGroups]);
 
-  const loadMessages = useCallback(
-    async (contactId = activeContact) => {
-      if (!contactId) return;
-      try {
-        setChatError("");
-        const token = localStorage.getItem("token");
-        const isGroup = visibleGroups.some((g) => g.id === contactId);
-        const res = await axios.get(`${API_BASE}/api/chat`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          params: { contactId, type: isGroup ? "group" : "direct" },
-        });
-        setMessages((prev) => ({ ...prev, [contactId]: res.data?.messages || [] }));
-      } catch (err) {
-        setChatError(err.response?.data?.error || err.message || "Failed to load messages");
-      }
-    },
-    [activeContact, visibleGroups]
-  );
+
+
+
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadMessages();
-  }, [loadMessages]);
-
-  // polling to receive new messages from others
-  useEffect(() => {
-    if (!activeContact) return;
-    const interval = setInterval(() => loadMessages(activeContact), 3000);
-    return () => clearInterval(interval);
-  }, [activeContact, visibleGroups, loadMessages]);
+    if (socket && activeContact) {
+      socket.emit("joinChat", activeContact);
+      socket.on("chat message", (msg) => {
+        setMessages((prev) => ({
+          ...prev,
+          [activeContact]: [...(prev[activeContact] || []), msg],
+        }));
+      });
+      return () => {
+        socket.off("chat message");
+      };
+    }
+  }, [socket, activeContact]);
 
   const currentMessages = useMemo(() => {
     const msgs = messages[activeContact] || [];
     return msgs.map((m) => {
       const author = m.author || m.from?.name || "Unknown";
-      const senderId = m.from?._id || m.from;
+      const senderId = m.from?.id || m.from;
       const senderString = senderId?.toString?.() || senderId;
       const isYou = author === "You" || senderString === userId;
-      return { ...m, id: m._id || m.id, author, isYou };
+      return { ...m, id: m.id || m._id, author, isYou };
     });
   }, [messages, activeContact, userId]);
 
   const send = (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || !socket) return;
     const entry = { id: Date.now(), author: "You", text: text.trim(), isYou: true };
-    const isGroup = visibleGroups.some((g) => g.id === activeContact);
     setMessages((prev) => ({
       ...prev,
       [activeContact]: [...(prev[activeContact] || []), entry],
     }));
     setText("");
-    const token = localStorage.getItem("token");
-    axios
-      .post(
-        `${API_BASE}/api/chat`,
-        { contactId: activeContact, type: isGroup ? "group" : "direct", text: entry.text },
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      )
-      .then(() => loadMessages(activeContact))
-      .catch(() => {});
+    socket.emit("chat message", { roomKey: activeContact, text: entry.text });
   };
 
   return (
@@ -199,11 +179,11 @@ const ChatWindow = () => {
           {currentMessages.map((m) => (
             <div
               key={m.id}
-              className={`flex ${m.author === "You" ? "justify-end" : "justify-start"}`}
+              className={`flex ${m.isYou ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow ${
-                  m.author === "You"
+                  m.isYou
                     ? "bg-[#005c4b] text-white"
                     : "bg-[#202c33] text-slate-100"
                 }`}

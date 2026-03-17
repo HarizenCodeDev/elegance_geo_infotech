@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import Logo from "../assets/Logo/EGlogo.png";
+import { useTheme } from "../context/ThemeContext";
+import Logo from "/EGlogo.png";
 import ChatWindow from "../components/ChatWindow";
 import AttendanceChart from "../components/AttendanceChart";
 import { useAuth } from "../context/authContext";
@@ -14,19 +15,23 @@ import AttendanceList from "../components/AttendanceList";
 import EditEmployeeForm from "../components/EditEmployeeForm";
 import AddAnnouncementForm from "../components/AddAnnouncementForm";
 import AnnouncementsList from "../components/AnnouncementsList";
+import PayrollList from './PayrollList';
+import GeneratePayslip from './GeneratePayslip';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const menu = [
   { title: "Employees", items: ["Add Employees", "Employees List"] },
+  { title: "Performance Reviews", items: ["Reviews List", "Add Review"] },
   { title: "Leave Request", items: [] },
-  { title: "Payroll", items: ["Add Payroll", "Payroll List"] },
+  { title: "Payroll", items: ["Generate Payslip", "Payroll List"] },
   { title: "Attendence", items: ["Add Attendence"] },
   { title: "Announcement", items: ["Add Announcement", "Announcement List"] },
 ];
 
 const AdminDashboard = () => {
   const [openIndex, setOpenIndex] = useState(null);
+  const { theme, toggleTheme } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
   const [chatUnread, setChatUnread] = useState(true);
   const { user, logout, updateAvatar } = useAuth();
@@ -71,8 +76,8 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col">
-      <header className="bg-slate-800 px-6 py-4 shadow flex items-center gap-3 relative">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-white flex flex-col">
+      <header className="bg-white dark:bg-slate-800 px-6 py-4 shadow flex items-center gap-3 relative border-b border-gray-200 dark:border-slate-700">
         <div className="flex items-center gap-3">
           <img src={Logo} alt="Elegance Geo Infotech" className="h-9 w-9 object-contain" />
           <h1 className="text-xl font-semibold">Elegance Geo Infotech</h1>
@@ -183,10 +188,16 @@ const AdminDashboard = () => {
       </header>
 
       <div className="flex flex-1">
-        <aside className="w-72 bg-slate-800/80 border-r border-slate-700 px-5 py-6 space-y-6">
+        <aside className="w-72 bg-white/90 dark:bg-slate-800/80 border-r border-gray-200 dark:border-slate-700 px-5 py-6 space-y-6">
           <h2 className="text-lg font-semibold pb-2 border-b border-slate-700">
             {user?.name || "Dashboard"}
           </h2>
+          <button
+            onClick={toggleTheme}
+            className="mb-4 px-3 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-sm transition border border-slate-600"
+          >
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
           <nav className="space-y-4">
             <div className="bg-slate-800 rounded-lg border border-slate-700">
               <button
@@ -247,16 +258,23 @@ const AdminDashboard = () => {
                                 } else if (item === "Add Attendence") {
                                   setCurrentView("attendance");
                                   setChatOpen(false);
-                                } else if (item === "Add Announcement") {
-                                  setCurrentView("addAnnouncement");
-                                  setChatOpen(false);
-                                } else if (item === "Announcement List") {
-                                  setCurrentView("announcementList");
-                                  setChatOpen(false);
-                                } else {
-                                  setCurrentView("dashboard");
-                                  setChatOpen(false);
                                 }
+                            if (item === "Generate Payslip") {
+                              setCurrentView("generatePayslip");
+                              setChatOpen(false);
+                            } else if (item === "Payroll List") {
+                              setCurrentView("payrollList");
+                              setChatOpen(false);
+                            } else if (item === "Add Announcement") {
+                              setCurrentView("addAnnouncement");
+                              setChatOpen(false);
+                            } else if (item === "Announcement List") {
+                              setCurrentView("announcementList");
+                              setChatOpen(false);
+                            } else {
+                              setCurrentView("dashboard");
+                              setChatOpen(false);
+                            }
                               }}
                             >
                               {item}
@@ -352,6 +370,14 @@ const AdminDashboard = () => {
                 }}
               />
             </section>
+          ) : currentView === "payrollList" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <PayrollList />
+            </section>
+          ) : currentView === "generatePayslip" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <GeneratePayslip />
+            </section>
           ) : currentView === "leaves" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
               <LeavesList />
@@ -359,6 +385,14 @@ const AdminDashboard = () => {
           ) : currentView === "addAnnouncement" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
               <AddAnnouncementForm onCreated={() => setCurrentView("announcementList")} />
+            </section>
+          ) : currentView === "announcementList" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <ReviewsList />
+            </section>
+          ) : currentView === "addReview" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <AddReviewForm onDone={() => setCurrentView("reviewsList")} />
             </section>
           ) : currentView === "announcementList" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
