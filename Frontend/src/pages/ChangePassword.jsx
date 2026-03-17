@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import axios from "axios";
-import bgVideo from "../assets/Logo/galvid.mp4";
+import bgVideo from "/galvid.mp4";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import PasswordInput from "../components/PasswordInput"; // Assuming you create this component
 
 const ChangePassword = () => {
-    const [email, setEmail] = useState("");
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -35,7 +35,7 @@ const ChangePassword = () => {
         }
 
         try {
-            const response = await axios.put("http://localhost:5000/api/auth/change-password", {
+            const response = await axios.put(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/auth/change-password`, {
                 oldPassword,
                 newPassword
             }, {
@@ -43,14 +43,12 @@ const ChangePassword = () => {
                     Authorization: `Bearer ${token}`
                 }
             });
-            console.log("Password changed:", response.data);
             setSuccess("Password changed successfully!");
             // Clear form
             setOldPassword("");
             setNewPassword("");
-            setConfirmPassword("");
+            setConfirmPassword(""); 
         } catch (error) {
-            console.error("Change password failed:", error);
             setError(error.response?.data?.error || "Failed to change password.");
         } finally {
             setLoading(false);
@@ -78,89 +76,30 @@ const ChangePassword = () => {
                     {error && <p className="text-red-500 text-center mb-4">{error}</p>}
                     {success && <p className="text-green-500 text-center mb-4">{success}</p>}
                     <form className="space-y-4" onSubmit={handleSubmit}>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-medium mb-1 text-white">Email</label>
-                            <input
-                                type="email"
-                                placeholder="Enter your email"
-                                value={email}
-                                className="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-medium mb-1 text-white">Current Password</label>
-                            <div className="relative">
-                                <input
-                                    type={showOldPassword ? "text" : "password"}
-                                    placeholder="Enter current password"
-                                    value={oldPassword}
-                                    className="border rounded px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-teal-500 w-full"
-                                    onChange={(e) => setOldPassword(e.target.value)}
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                    onClick={() => setShowOldPassword(!showOldPassword)}
-                                >
-                                    {showOldPassword ? (
-                                        <AiOutlineEyeInvisible className="h-5 w-5 text-gray-400" />
-                                    ) : (
-                                        <AiOutlineEye className="h-5 w-5 text-gray-400" />
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-medium mb-1 text-white">New Password</label>
-                            <div className="relative">
-                                <input
-                                    type={showNewPassword ? "text" : "password"}
-                                    placeholder="Enter new password"
-                                    value={newPassword}
-                                    className="border rounded px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-teal-500 w-full"
-                                    onChange={(e) => setNewPassword(e.target.value)}
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                    onClick={() => setShowNewPassword(!showNewPassword)}
-                                >
-                                    {showNewPassword ? (
-                                        <AiOutlineEyeInvisible className="h-5 w-5 text-gray-400" />
-                                    ) : (
-                                        <AiOutlineEye className="h-5 w-5 text-gray-400" />
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex flex-col">
-                            <label className="text-sm font-medium mb-1 text-white">Confirm New Password</label>
-                            <div className="relative">
-                                <input
-                                    type={showConfirmPassword ? "text" : "password"}
-                                    placeholder="Confirm new password"
-                                    value={confirmPassword}
-                                    className="border rounded px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-teal-500 w-full"
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                >
-                                    {showConfirmPassword ? (
-                                        <AiOutlineEyeInvisible className="h-5 w-5 text-gray-400" />
-                                    ) : (
-                                        <AiOutlineEye className="h-5 w-5 text-gray-400" />
-                                    )}
-                                </button>
-                            </div>
-                        </div>
+                        <PasswordInput
+                            label="Current Password"
+                            placeholder="Enter current password"
+                            value={oldPassword}
+                            onChange={(e) => setOldPassword(e.target.value)}
+                            showPassword={showOldPassword}
+                            onToggleShowPassword={() => setShowOldPassword(!showOldPassword)}
+                        />
+                        <PasswordInput
+                            label="New Password"
+                            placeholder="Enter new password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            showPassword={showNewPassword}
+                            onToggleShowPassword={() => setShowNewPassword(!showNewPassword)}
+                        />
+                        <PasswordInput
+                            label="Confirm New Password"
+                            placeholder="Confirm new password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            showPassword={showConfirmPassword}
+                            onToggleShowPassword={() => setShowConfirmPassword(!showConfirmPassword)}
+                        />
                         <button
                             type="submit"
                             disabled={loading}

@@ -276,58 +276,74 @@ app.post("/api/attendance", auth, async (req, res) => {
   const isoDay = new Date(day.toISOString().slice(0, 10));
 
   // Employee self checkin/checkout
-  if (action === "checkin" || action === "checkout") {
-    const statusLabel = action === "checkin" ? "Present" : "Present";
-    const data = {
-      userId: targetUserId,
-      date: isoDay,
-      status: statusLabel,
-      checkInAt: action === "checkin" ? new Date() : undefined,
-      checkOutAt: action === "checkout" ? new Date() : undefined,
-    };
+  try {
+    if (action === "checkin" || action === "checkout") {
+      const statusLabel = "Present"; // Assuming checkin/checkout implies presence
+      const data = {
+        userId: targetUserId,
+        date: isoDay,
+        status: statusLabel,
+        checkInAt: action === "checkin" ? new Date() : undefined,
+        checkOutAt: action === "checkout" ? new Date() : undefined,
+      };
+      const record = await prisma.attendance.upsert({
+        where: { userId_date: { userId: targetUserId, date: isoDay } },
+        update: {
+          status: data.status,
+          checkInAt: data.checkInAt ?? undefined,
+          checkOutAt: data.checkOutAt ?? undefined,
+        },
+        create: data,
+      });
+      return res.json({ record });
+    }
+
+    // Admin sets status
+    if (!status) return res.status(400).json({ error: "status required" });
     const record = await prisma.attendance.upsert({
       where: { userId_date: { userId: targetUserId, date: isoDay } },
-      update: {
-        status: data.status,
-        checkInAt: data.checkInAt ?? undefined,
-        checkOutAt: data.checkOutAt ?? undefined,
-      },
-      create: data,
+      update: { status },
+      create: { userId: targetUserId, date: isoDay, status },
     });
-    return res.json({ record });
+    res.json({ record });
+  } catch (err) {
+    console.error("Error processing attendance:", err);
+    res.status(500).json({ error: "Failed to process attendance" });
   }
-
-  // Admin sets status
-  if (!status) return res.status(400).json({ error: "status required" });
-  const record = await prisma.attendance.upsert({
-    where: { userId_date: { userId: targetUserId, date: isoDay } },
-    update: { status },
-    create: { userId: targetUserId, date: isoDay, status },
-  });
-  res.json({ record });
 });
 
 // Announcements
 app.get("/api/announcements", auth, async (req, res) => {
-  const announcements = await prisma.announcement.findMany({
-    include: { createdBy: true },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json({ announcements });
+  try {
+    const announcements = await prisma.announcement.findMany({
+      include: { createdBy: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ announcements });
+  } catch (err) {
+    console.error("Error fetching announcements:", err);
+    res.status(500).json({ error: "Failed to fetch announcements" });
+  }
 });
 
 app.post("/api/announcements", auth, async (req, res) => {
   const { title, message, audienceRoles = ["all"], audienceDepartments = [] } = req.body;
-  const announcement = await prisma.announcement.create({
-    data: {
-      title,
-      message,
-      audienceRoles,
-      audienceDepartments,
-      createdById: req.user.id,
-    },
-  });
-  res.json({ announcement });
+  if (!title || !message) return res.status(400).json({ error: "Title and message are required" });
+  try {
+    const announcement = await prisma.announcement.create({
+      data: {
+        title,
+        message,
+        audienceRoles,
+        audienceDepartments,
+        createdById: req.user.id,
+      },
+    });
+    res.json({ announcement });
+  } catch (err) {
+    console.error("Error creating announcement:", err);
+    res.status(500).json({ error: "Failed to create announcement" });
+  }
 });
 
 // Chat helpers
@@ -338,18 +354,23 @@ app.get("/api/chat", auth, async (req, res) => {
   if (!contactId || !type) return res.status(400).json({ error: "contactId and type required" });
   let roomKey = contactId;
   if (type === "direct") roomKey = directRoom(req.user.id, contactId);
-  const messages = await prisma.chatMessage.findMany({
-    where: { type, contactId: roomKey },
-    include: { from: true },
-    orderBy: { createdAt: "asc" },
-  });
-  const formatted = messages.map((m) => ({
-    id: m.id,
-    text: m.text,
-    author: m.from.name,
-    from: { _id: m.from.id, name: m.from.name },
-  }));
-  res.json({ messages: formatted });
+  try {
+    const messages = await prisma.chatMessage.findMany({
+      where: { type, contactId: roomKey },
+      include: { from: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const formatted = messages.map((m) => ({
+      id: m.id,
+      text: m.text,
+      author: m.from.name,
+      from: { _id: m.from.id, name: m.from.name },
+    }));
+    res.json({ messages: formatted });
+  } catch (err) {
+    console.error("Error fetching chat messages:", err);
+    res.status(500).json({ error: "Failed to fetch chat messages" });
+  }
 });
 
 app.post("/api/chat", auth, async (req, res) => {
@@ -361,27 +382,43 @@ app.post("/api/chat", auth, async (req, res) => {
     roomKey = directRoom(req.user.id, contactId);
     toUserId = contactId;
   }
-  const message = await prisma.chatMessage.create({
-    data: {
-      type,
-      contactId: roomKey,
-      text,
-      fromId: req.user.id,
-      toUserId,
-    },
-    include: { from: true },
-  });
-  res.json({
-    message: {
-      id: message.id,
-      text: message.text,
-      author: message.from.name,
-      from: { _id: message.from.id, name: message.from.name },
-    },
-  });
+  try {
+    const message = await prisma.chatMessage.create({
+      data: {
+        type,
+        contactId: roomKey,
+        text,
+        fromId: req.user.id,
+        toUserId,
+      },
+      include: { from: true },
+    });
+    res.json({
+      message: {
+        id: message.id,
+        text: message.text,
+        author: message.from.name,
+        from: { _id: message.from.id, name: message.from.name },
+      },
+    });
+  } catch (err) {
+    console.error("Error creating chat message:", err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
 });
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(500).json({ error: "An internal server error occurred." });
+});
 
 app.listen(PORT, async () => {
   await ensureRootSeed();

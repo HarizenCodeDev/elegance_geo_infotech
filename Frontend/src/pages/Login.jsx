@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import bgVideo from "../assets/Logo/galvid.mp4";
+import bgVideo from "/galvid.mp4";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 import { useAuth } from "../context/authContext";
 

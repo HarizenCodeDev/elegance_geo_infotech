@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import bgVideo from "../assets/Logo/galvid.mp4";
+import bgVideo from "/galvid.mp4";
 
 const ForgotPassword = () => {
     const [email, setEmail] = useState("");
