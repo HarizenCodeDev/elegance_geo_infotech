@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Logo from "/EGlogo.png";
 import ChatWindow from "../components/ChatWindow";
 import EmployeeLeaves from "../components/EmployeeLeaves";
 import EmployeeAttendanceView from "../components/EmployeeAttendanceView";
 import EmployeeAnnouncements from "../components/EmployeeAnnouncements";
 import { useAuth } from "../context/authContext";
+import { useSocket } from "../hooks/useSocket";
+import axios from "axios";
+import { navConfig } from "../navConfig";
 
 const cards = [
   { label: "This Month Present", value: 18, gradient: "from-emerald-400 via-teal-400 to-cyan-400" },
@@ -19,37 +22,69 @@ const miniCharts = [
 
 const EmployeeDashboard = () => {
   const { user } = useAuth();
+  const socket = useSocket();
   const [currentView, setCurrentView] = useState("dashboard");
   const [chatOpen, setChatOpen] = useState(false);
+  const [contacts, setContacts] = useState([]);
+  const [activeContact, setActiveContact] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [openIndex, setOpenIndex] = useState(null);
   const avatar = user?.avatar || user?.profileImage;
+
+  const menu = navConfig[user?.role] || [];
+
+  const handleToggle = (index) => {
+    setOpenIndex(openIndex === index ? null : index);
+  };
+
+  useEffect(() => {
+    if (socket) {
+      socket.on("online-users", (users) => {
+        setOnlineUsers(users);
+      });
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    const fetchContacts = async () => {
+      try {
+        const res = await axios.get("/api/employees");
+        setContacts(res.data.users);
+      } catch (err) {
+        console.error("Failed to fetch contacts:", err);
+      }
+    };
+    fetchContacts();
+  }, []);
 
   const renderMain = () => {
     if (currentView === "chat" || chatOpen)
       return (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold">Chat</h3>
-            <button
-              type="button"
-              onClick={() => {
-                setChatOpen(false);
-                setCurrentView("dashboard");
-              }}
-              className="text-sm text-slate-200 underline"
-            >
-              Close
-            </button>
+        <div className="flex h-[70vh]">
+          <div className="w-1/3 border-r border-gray-700">
+            <h3 className="text-xl font-semibold p-4">Contacts</h3>
+            <ul>
+              {contacts.map((contact) => (
+                <li
+                  key={contact.id}
+                  className={`p-4 cursor-pointer ${activeContact?.id === contact.id ? "bg-gray-700" : ""}`}
+                  onClick={() => setActiveContact(contact)}
+                >
+                  {contact.name}
+                  {onlineUsers.includes(contact.id) && <span className="text-green-500 ml-2">Online</span>}
+                </li>
+              ))}
+            </ul>
           </div>
-          <div className="h-[70vh]">
-            <ChatWindow />
+          <div className="w-2/3">
+            <ChatWindow activeContact={activeContact} socket={socket} currentUser={user} />
           </div>
         </div>
       );
 
     if (currentView === "leaves") return <EmployeeLeaves />;
     if (currentView === "attendance") return <EmployeeAttendanceView />;
-  if (currentView === "reviews") return <ReviewsList title="My Reviews" filterRevieweeId={user.id} />;
-  if (currentView === "announcements") return <EmployeeAnnouncements />;
+    if (currentView === "announcements") return <EmployeeAnnouncements />;
 
     // dashboard
     return (
@@ -128,64 +163,49 @@ const EmployeeDashboard = () => {
             {user?.name || "Main"}
           </h2>
           <nav className="space-y-3">
-            <button
-              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
-              onClick={() => {
-                setCurrentView("dashboard");
-                setChatOpen(false);
-              }}
-            >
-              Dashboard
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
-              onClick={() => {
-                setCurrentView("leaves");
-                setChatOpen(false);
-              }}
-            >
-              Leave Request
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
-              onClick={() => {
-                setCurrentView("attendance");
-                setChatOpen(false);
-              }}
-            >
-              Attendance
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
-              onClick={() => {
-                setCurrentView("reviews");
-                setChatOpen(false);
-              }}
-            >
-              My Reviews
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 rounded-lg bg-slate-800 border border-slate-700"
-              onClick={() => {
-                setCurrentView("announcements");
-                setChatOpen(false);
-              }}
-            >
-              Announcement
-            </button>
-            <div className="bg-slate-800 rounded-lg border border-slate-700">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                onClick={() => {
-                  setChatOpen(true);
-                  setCurrentView("chat");
-                }}
-              >
-                <span className="flex items-center gap-2">Chat</span>
-                <span className="text-slate-400">&#8250;</span>
-              </button>
-            </div>
+            {menu.map((section, idx) => (
+              <div key={section.title} className="bg-slate-800 rounded-lg border border-slate-700">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-4 py-3 font-medium"
+                  onClick={() => {
+                    if (section.view) {
+                      setCurrentView(section.view);
+                      setChatOpen(section.view === "chat");
+                      setOpenIndex(null);
+                    } else if (section.items && section.items.length > 0) {
+                      handleToggle(idx);
+                    }
+                  }}
+                >
+                  {section.title}
+                  {section.items && section.items.length > 0 && (
+                    <span className={`text-slate-400 transition ${openIndex === idx ? "rotate-90" : ""}`}>
+                      &#8250;
+                    </span>
+                  )}
+                </button>
+                {openIndex === idx && section.items && (
+                  <div className="px-4 pb-3">
+                    <div className="border-t border-slate-700 pt-2 space-y-1">
+                      {section.items.map((item) => (
+                        <button
+                          key={item}
+                          className="w-full text-left px-3 py-1.5 rounded-md text-sm hover:bg-slate-700/80"
+                          onClick={() => {
+                            // You can add view switching logic here if needed, e.g.:
+                            // const view = item.toLowerCase().replace(/\s+/g, "");
+                            // setCurrentView(view);
+                          }}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </nav>
         </aside>
 
@@ -194,5 +214,6 @@ const EmployeeDashboard = () => {
     </div>
   );
 };
+
 
 export default EmployeeDashboard;

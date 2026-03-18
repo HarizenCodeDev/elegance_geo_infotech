@@ -1,0 +1,47 @@
+export const navConfig = {
+  root: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "Employees", items: ["Add Employees", "Employees List"] },
+    { title: "Leave Request", items: ["Leave Dashboard"] },
+    { title: "Payroll", items: ["Generate Payslip", "Payroll List"] },
+    { title: "Attendence", items: ["Add Attendence"] },
+    { title: "Announcement", items: ["Add Announcement", "Announcement List"] },
+    { title: "Chat", view: "chat" },
+  ],
+  admin: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "Employees", items: ["Add Employees", "Employees List"] },
+    { title: "Leave Request", items: ["Leave Dashboard"] },
+    { title: "Payroll", items: ["Generate Payslip", "Payroll List"] },
+    { title: "Attendence", items: ["Add Attendence"] },
+    { title: "Announcement", items: ["Add Announcement", "Announcement List"] },
+    { title: "Chat", view: "chat" },
+  ],
+  manager: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "Employees", items: ["Employees List"] },
+    { title: "Leave Request", items: ["Leave Dashboard"] },
+    { title: "Chat", view: "chat" },
+  ],
+  teamlead: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "My Team", items: ["Team Members", "Team Attendance"] },
+    { title: "Leave Request", items: ["My Leave Requests"] },
+    { title: "Chat", view: "chat" },
+  ],
+  developer: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "My Profile", items: ["View Profile", "Edit Profile"] },
+    { title: "Leave Request", items: ["My Leave Requests"] },
+    { title: "Payslips", view: "payslips" },
+    { title: "Chat", view: "chat" },
+  ],
+  hr: [
+    { title: "Dashboard", view: "dashboard" },
+    { title: "Employees", items: ["Add Employees", "Employees List"] },
+    { title: "Leave Request", items: ["Leave Dashboard"] },
+    { title: "Payroll", items: ["Generate Payslip", "Payroll List"] },
+    { title: "Attendence", items: ["Add Attendence"] },
+    { title: "Chat", view: "chat" },
+  ],
+};

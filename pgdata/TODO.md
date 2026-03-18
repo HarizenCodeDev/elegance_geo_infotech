@@ -99,20 +99,20 @@
 
 ## 🔴 Workflow (IMPORTANT)
 
-* [ ] Employee/TL applies leave
-* [ ] Admin/HR/Manager → Level 1 approval
-* [ ] Root → Final approval
+* [✅] Employee/TL applies leave
+* [✅] Admin/HR/Manager → Level 1 approval
+* [✅] Root → Final approval
 
 ## 🔴 Features
 
-* [ ] Apply leave
-* [ ] Approve / Reject
-* [ ] Leave tracking dashboard
+* [✅] Apply leave
+* [✅] Approve / Reject
+* [✅] Leave tracking dashboard
 
 ## 🔴 Edge Cases
 
-* [ ] Prevent overlapping leaves
-* [ ] Validate leave dates
+* [✅] Prevent overlapping leaves
+* [✅] Validate leave dates
 
 ---
 
@@ -120,58 +120,60 @@
 
 ## 👑 Root
 
-* [ ] Full system control
-* [ ] Password reset requests
-* [ ] Reports + analytics
+*- [x] Full system control
+* [✅] Password reset requests
+* [✅] Reports + analytics
 
 ## 🧑‍💼 Admin / Manager / HR
 
-* [ ] Employee management
-* [ ] Leave approvals
-* [ ] Attendance Excel export
+* [✅] Employee management
+* [✅] Leave approvals
+* [✅] Attendance Excel export
 
 ## 👨‍💻 TL / Developer
 
-* [ ] Personal dashboard
-* [ ] Yearly stats:
+* [✅] Personal dashboard
+* [✅] Yearly stats:
 
-  * [ ] Total days
-  * [ ] Leaves
-  * [ ] Late punches
-  * [ ] On-time punches
-* [ ] Payslips (last 6 months PDF)
+  * [✅] Total days
+  * [✅] Leaves
+  * [✅] Late punches
+  * [✅] On-time punches
+* [✅] Payslips (last 6 months PDF)
 
 ---
 
 # 💬 PHASE 9: CHAT SYSTEM
 
-* [ ] Real-time chat using Socket.IO
-* [ ] Direct chat (1-to-1)
-* [ ] Group chat (Root / Manager only)
+* [✅] Real-time chat using Socket.IO
+* [✅] Direct chat (1-to-1)
+* [✅] Group chat (Root / Manager only)
 
 ## 🔴 Improvements
 
-* [ ] Message status (sent/read)
-* [ ] Typing indicator
-* [ ] Online/offline tracking
-* [ ] Optimize queries
+*- [x] Message status (sent/read)
+* [x] Typing indicator
+* [x] Online/offline tracking
+* [x] Optimize queries
+
+**Maintenance:** Performance Reviews feature removed from the codebase (backend routes and frontend components were removed). Update database/migrations as needed.
 
 ---
 
 # 📢 PHASE 10: ANNOUNCEMENT SYSTEM
 
-* [ ] Create announcements table
-* [ ] POST (Admin/Manager/HR)
-* [ ] GET (All users)
-* [ ] Show in dashboard
+* [✅] Create announcements table
+* [✅] POST (Admin/Manager/HR)
+* [✅] GET (All users)
+* [✅] Show in dashboard
 
 ---
 
 # 📁 PHASE 11: FILE SYSTEM
 
-* [ ] Excel attendance reports
-* [ ] PDF payslips
-* [ ] Store last 6 months data
+*- [x] Excel attendance reports
+*- [x] PDF payslips
+*- [x] Store last 6 months data
 
 ## 🔴 Improvements
 
@@ -182,33 +184,32 @@
 
 # 🔔 PHASE 12: NOTIFICATIONS SYSTEM
 
-* [ ] Leave applied alerts
-* [ ] Leave approved/rejected alerts
-* [ ] Chat notifications
-* [ ] Announcement alerts
-* [ ] Read/unread tracking
-* [ ] Real-time updates
+- [x] Leave applied alerts
+  - [x] Leave approved/rejected alerts
+  - [x] Chat notifications
+  - [x] Announcement alerts
+  - [x] Read/unread tracking*- [x] Real-time updates
 
 ---
 
 # 🔒 PHASE 13: SECURITY
 
-* [ ] Password hashing
-* [ ] Input validation
-* [ ] API protection
-* [ ] Role validation
-* [ ] Prevent SQL injection
+*- [x] Password hashing
+*- [x] Input validation
+*- [x] API protection
+*- [x] Role validation
+*- [x] Prevent SQL injection
 
 ---
 
-# 📜 PHASE 14: AUDIT & LOGGING
+# 📜 PHASE 14: AUDIT & LOGGING ✅ COMPLETED
 
-* [ ] Track:
+* [x] Track:
 
-  * [ ] Employee updates
-  * [ ] Leave approvals
-  * [ ] Password resets
-* [ ] Store in `audit_logs`
+  *- [x] Employee updates
+  *- [x] Leave approvals
+    - [x] Password resets
+*- [x] Store in `audit_logs` 
 
 ---
 

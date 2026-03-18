@@ -17,24 +17,19 @@ import AddAnnouncementForm from "../components/AddAnnouncementForm";
 import AnnouncementsList from "../components/AnnouncementsList";
 import PayrollList from './PayrollList';
 import GeneratePayslip from './GeneratePayslip';
+import LeaveDashboard from "../components/LeaveDashboard";
+import LeaveApproval from "../components/LeaveApproval";
+
+import { navConfig } from "../navConfig";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-const menu = [
-  { title: "Employees", items: ["Add Employees", "Employees List"] },
-  { title: "Performance Reviews", items: ["Reviews List", "Add Review"] },
-  { title: "Leave Request", items: [] },
-  { title: "Payroll", items: ["Generate Payslip", "Payroll List"] },
-  { title: "Attendence", items: ["Add Attendence"] },
-  { title: "Announcement", items: ["Add Announcement", "Announcement List"] },
-];
-
 const AdminDashboard = () => {
+  const { user, logout, updateAvatar } = useAuth();
+  const menu = navConfig[user?.role] || [];
   const [openIndex, setOpenIndex] = useState(null);
   const { theme, toggleTheme } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatUnread, setChatUnread] = useState(true);
-  const { user, logout, updateAvatar } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
@@ -91,6 +86,164 @@ const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addE
 
   const handleToggle = (index) => {
     setOpenIndex((prev) => (prev === index ? null : index)); // only one open at a time
+  };
+
+  const renderMain = () => {
+    if (currentView === "chat" || chatOpen) {
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold">Chat</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setChatOpen(false);
+                setCurrentView("dashboard");
+              }}
+              className="text-sm text-slate-200 underline"
+            >
+              Close
+            </button>
+          </div>
+          <div className="h-[70vh]">
+            <ChatWindow />
+          </div>
+        </div>
+      );
+    }
+    if (currentView === "addEmployee") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <AddEmployeeForm />
+        </section>
+      );
+    }
+    if (currentView === "attendance") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <AttendanceList />
+        </section>
+      );
+    }
+    if (currentView === "editEmployee" && selectedEmployee) {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <EditEmployeeForm
+            employee={selectedEmployee}
+            onDone={() => {
+              setCurrentView("employeesList");
+              setSelectedEmployee(null);
+            }}
+          />
+        </section>
+      );
+    }
+    if (currentView === "employeeDetails" && selectedEmployee) {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <EmployeeDetails
+            employee={selectedEmployee}
+            onBack={() => {
+              setCurrentView("employeesList");
+              setSelectedEmployee(null);
+            }}
+          />
+        </section>
+      );
+    }
+    if (currentView === "employeesList") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <EmployeesList
+            onAddNew={() => setCurrentView("addEmployee")}
+            onView={(emp) => {
+              setSelectedEmployee(emp);
+              setCurrentView("employeeDetails");
+            }}
+            onEdit={(emp) => {
+              setSelectedEmployee(emp);
+              setCurrentView("editEmployee");
+            }}
+          />
+        </section>
+      );
+    }
+    if (currentView === "payrollList") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <PayrollList />
+        </section>
+      );
+    }
+    if (currentView === "generatePayslip") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <GeneratePayslip />
+        </section>
+      );
+    }
+    if (currentView === "leaveDashboard") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <LeaveDashboard />
+        </section>
+      );
+    }
+    if (currentView === "leaveApproval") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <LeaveApproval onBack={() => setCurrentView("leaves")} />
+        </section>
+      );
+    }
+    if (currentView === "leaves") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <LeavesList />
+        </section>
+      );
+    }
+    if (currentView === "addAnnouncement") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <AddAnnouncementForm onCreated={() => setCurrentView("announcementList")} />
+        </section>
+      );
+    }
+    if (currentView === "announcementList") {
+      return (
+        <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+          <AnnouncementsList title="Announcements" />
+        </section>
+      );
+    }
+    return (
+      <section className="space-y-6">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr">
+          {[
+            { label: "Total Employees", value: stats.totalUsers || 0, gradient: "from-indigo-400 via-violet-400 to-fuchsia-400" },
+            { label: "Today Present", value: stats.todayPresent || 0, gradient: "from-emerald-400 via-teal-400 to-cyan-400" },
+            { label: "On Leave", value: stats.onLeave || 0, gradient: "from-rose-400 via-pink-400 to-orange-300" },
+            { label: "Absent", value: stats.todayAbsent || 0, gradient: "from-amber-400 via-yellow-400 to-lime-400" },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70 p-4 shadow-lg"
+            >
+              <div
+                className={`absolute inset-0 opacity-90 bg-gradient-to-br ${stat.gradient}`}
+                aria-hidden="true"
+              />
+              <div className="relative flex flex-col gap-3 text-white">
+                <div className="text-sm uppercase tracking-wide text-white/80">{stat.label}</div>
+                <div className="text-3xl font-bold drop-shadow-sm">{stat.value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <AttendanceChart />
+      </section>
+    );
   };
 
   return (
@@ -214,74 +367,66 @@ const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addE
             onClick={toggleTheme}
             className="mb-4 px-3 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-sm transition border border-slate-600"
           >
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
           </button>
           <nav className="space-y-4">
-            <div className="bg-slate-800 rounded-lg border border-slate-700">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                onClick={() => {
-                  setCurrentView("dashboard");
-                  setChatOpen(false);
-                  setSelectedEmployee(null);
-                  setOpenIndex(null);
-                }}
-              >
-                Dashboard
-                <span className="text-slate-400">&#8250;</span>
-              </button>
-            </div>
-                {menu.map((section, idx) => (
-                  <React.Fragment key={section.title}>
-                    <div className="bg-slate-800 rounded-lg border border-slate-700">
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                        onClick={() => {
-                          if (section.items.length === 0 && section.title === "Leave Request") {
-                            if (section.title === "Leave Request") {
-                              setCurrentView("leaveApproval");
-                            } else {
-                              setCurrentView("leaves");
-                            }
-                            setChatOpen(false);
-                            setOpenIndex(null);
-                          } else {
-                            handleToggle(idx);
-                          }
-                        }}
-                      >
-                        {section.title}
-                        {section.items.length > 0 && (
-                          <span className={`text-slate-400 transition ${openIndex === idx ? "rotate-90" : ""}`}>
-                            &#8250;
-                          </span>
-                        )}
-                      </button>
-                      {section.items.length > 0 && (
+            {menu.map((section, idx) => (
+              <React.Fragment key={section.title}>
+                <div className="bg-slate-800 rounded-lg border border-slate-700">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between px-4 py-3 font-medium"
+                    onClick={() => {
+                      if (section.view) {
+                        setCurrentView(section.view);
+                        setChatOpen(section.view === "chat");
+                        setOpenIndex(null);
+                      } else if (section.items && section.items.length > 0) {
+                        handleToggle(idx);
+                      } else if (section.title === "Leave Request") {
+                        setCurrentView("leaveApproval");
+                        setChatOpen(false);
+                        setOpenIndex(null);
+                      } else {
+                        setCurrentView("dashboard");
+                        setChatOpen(false);
+                        setSelectedEmployee(null);
+                        setOpenIndex(null);
+                      }
+                    }}
+                  >
+                    {section.title}
+                    {section.items && section.items.length > 0 && (
+                      <span className={`text-slate-400 transition ${openIndex === idx ? "rotate-90" : ""}`}>
+                        &#8250;
+                      </span>
+                    )}
+                  </button>
+                  {section.items && section.items.length > 0 && (
+                    <div
+                      className={`bg-slate-900/40 border-t border-slate-700 transition-all ${
+                        openIndex === idx ? "max-h-40 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
+                      }`}
+                    >
+                      {section.items.map((item) => (
                         <div
-                          className={`bg-slate-900/40 border-t border-slate-700 transition-all ${
-                            openIndex === idx ? "max-h-40 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
-                          }`}
-                        >
-                          {section.items.map((item) => (
-                            <div
-                              key={item}
-                              className="px-4 py-2 text-sm text-slate-200 hover:bg-slate-700/60 cursor-pointer transition"
-                              onClick={() => {
-                                if (item === "Add Employees") {
-                                  setCurrentView("addEmployee");
-                                  setChatOpen(false);
-                                } else if (item === "Employees List") {
-                                  setCurrentView("employeesList");
-                                  setSelectedEmployee(null);
-                                  setChatOpen(false);
-                                } else if (item === "Add Attendence") {
-                                  setCurrentView("attendance");
-                                  setChatOpen(false);
-                                }
-                            if (item === "Generate Payslip") {
+                          key={item}
+                          className="px-4 py-2 text-sm text-slate-200 hover:bg-slate-700/60 cursor-pointer transition"
+                          onClick={() => {
+                            if (item === "Add Employees") {
+                              setCurrentView("addEmployee");
+                              setChatOpen(false);
+                            } else if (item === "Employees List") {
+                              setCurrentView("employeesList");
+                              setSelectedEmployee(null);
+                              setChatOpen(false);
+                            } else if (item === "Add Attendence") {
+                              setCurrentView("attendance");
+                              setChatOpen(false);
+                            } else if (item === "Leave Dashboard") {
+                              setCurrentView("leaveDashboard");
+                              setChatOpen(false);
+                            } else if (item === "Generate Payslip") {
                               setCurrentView("generatePayslip");
                               setChatOpen(false);
                             } else if (item === "Payroll List") {
@@ -297,170 +442,21 @@ const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addE
                               setCurrentView("dashboard");
                               setChatOpen(false);
                             }
-                              }}
-                            >
-                              {item}
-                            </div>
-                          ))}
+                          }}
+                        >
+                          {item}
                         </div>
-                      )}
+                      ))}
                     </div>
-
-                {idx === 0 && (
-                  <div className="bg-slate-800 rounded-lg border border-slate-700">
-                    <button
-                      type="button"
-                    className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                    onClick={() => {
-                        setChatOpen(true);
-                        setChatUnread(false);
-                        setCurrentView("chat");
-                    }}
-                  >
-                      <span className="flex items-center gap-2">
-                        Chat
-                        {chatUnread && <span className="h-2.5 w-2.5 rounded-full bg-red-500" />}
-                      </span>
-                      <span className="text-slate-400">&#8250;</span>
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </React.Fragment>
             ))}
           </nav>
         </aside>
 
         <main className="flex-1 p-8">
-          {currentView === "chat" || chatOpen ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold">Chat</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChatOpen(false);
-                    setCurrentView("dashboard");
-                  }}
-                  className="text-sm text-slate-200 underline"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="h-[70vh]">
-                <ChatWindow />
-              </div>
-            </div>
-          ) : currentView === "addEmployee" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <AddEmployeeForm />
-            </section>
-          ) : currentView === "attendance" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <AttendanceList />
-            </section>
-          ) : currentView === "editEmployee" && selectedEmployee ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <EditEmployeeForm
-                employee={selectedEmployee}
-                onDone={() => {
-                  setCurrentView("employeesList");
-                  setSelectedEmployee(null);
-                }}
-              />
-            </section>
-          ) : currentView === "employeeDetails" && selectedEmployee ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <EmployeeDetails
-                employee={selectedEmployee}
-                onBack={() => {
-                  setCurrentView("employeesList");
-                  setSelectedEmployee(null);
-                }}
-              />
-            </section>
-          ) : currentView === "employeesList" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <EmployeesList
-                onAddNew={() => setCurrentView("addEmployee")}
-                onView={(emp) => {
-                  setSelectedEmployee(emp);
-                  setCurrentView("employeeDetails");
-                }}
-                onEdit={(emp) => {
-                  setSelectedEmployee(emp);
-                  setCurrentView("editEmployee");
-                }}
-              />
-            </section>
-          ) : currentView === "payrollList" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <PayrollList />
-            </section>
-          ) : currentView === "generatePayslip" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <GeneratePayslip />
-            </section>
-          ) : currentView === "leaveApproval" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <LeaveApproval onBack={() => setCurrentView("leaves")} />
-            </section>
-          ) : currentView === "leaves" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <LeavesList />
-            </section>
-          ) : currentView === "addAnnouncement" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <AddAnnouncementForm onCreated={() => setCurrentView("announcementList")} />
-            </section>
-          ) : currentView === "announcementList" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <ReviewsList />
-            </section>
-          ) : currentView === "addReview" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <AddReviewForm onDone={() => setCurrentView("reviewsList")} />
-            </section>
-          ) : currentView === "announcementList" ? (
-            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
-              <AnnouncementsList title="Announcements" />
-            </section>
-          ) : (
-            <section className="space-y-6">
-              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr">
-                {[
-                  { label: "Total Employees", value: stats.totalUsers || 0, gradient: "from-indigo-400 via-violet-400 to-fuchsia-400" },
-                  { label: "Today Present", value: stats.todayPresent || 0, gradient: "from-emerald-400 via-teal-400 to-cyan-400" },
-                  { label: "Today Absent", value: stats.todayAbsent || 0, gradient: "from-rose-400 via-pink-400 to-orange-300" },
-                  { label: "Leave Requests", value: stats.pendingLeaves || 0, gradient: "from-amber-400 via-orange-400 to-rose-300" },
-                  { label: "Leave Approved", value: stats.approvedLeaves || 0, gradient: "from-sky-400 via-cyan-400 to-emerald-300" },
-                  { label: "Developers", value: stats.developers || 0, gradient: "from-cyan-400 via-blue-400 to-indigo-400" },
-                  { label: "Attendance Today", value: stats.todayAttendance || 0, gradient: "from-lime-300 via-emerald-300 to-green-400" },
-                  { label: "Late Arrivals", value: stats.latePunches || 0, gradient: "from-red-400 via-rose-400 to-orange-400" },
-                ].map((card) => (
-                  <div
-                    key={card.label}
-                    className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70 p-4 shadow-lg h-full flex flex-col justify-between"
-                  >
-                    <div
-                      className={`absolute inset-0 opacity-90 bg-gradient-to-br ${card.gradient}`}
-                      aria-hidden="true"
-                    />
-                    <div className="relative flex flex-col gap-3 text-white">
-                      <div className="text-sm uppercase tracking-wide text-white/80">{card.label}</div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold drop-shadow-sm">{card.value}</span>
-                        <span className="text-xs px-2 py-1 rounded-full bg-white/20 backdrop-blur-sm">
-                          Live
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <AttendanceChart data={stats.weeklyAttendance || []} />
-            </section>
-          )}
+          {renderMain()}
         </main>
       </div>
 

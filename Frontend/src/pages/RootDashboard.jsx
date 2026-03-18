@@ -14,21 +14,18 @@ import AttendanceList from "../components/AttendanceList";
 import EditEmployeeForm from "../components/EditEmployeeForm";
 import AddAnnouncementForm from "../components/AddAnnouncementForm";
 import AnnouncementsList from "../components/AnnouncementsList";
+import LeaveDashboard from "../components/LeaveDashboard";
+import PasswordResetRequests from "../components/PasswordResetRequests";
+import Notifications from "../components/Notifications";
+import Reports from "../components/Reports";
+import ReportsAndAnalytics from "../components/ReportsAndAnalytics";
+import { navConfig } from "../navConfig";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-const menu = [
-  { title: "Employees", items: ["Add Employees", "Employees List"] },
-  { title: "Leave Request", items: [] },
-  { title: "Payroll", items: ["Add Payroll", "Payroll List"] },
-  { title: "Attendence", items: ["Add Attendence"] },
-  { title: "Announcement", items: ["Add Announcement", "Announcement List"] },
-];
 
 const RootDashboard = () => {
   const [openIndex, setOpenIndex] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatUnread, setChatUnread] = useState(true);
   const { user, logout, updateAvatar } = useAuth();
   const navigate = useNavigate();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -38,6 +35,8 @@ const RootDashboard = () => {
   const [uploadError, setUploadError] = useState("");
   const [currentView, setCurrentView] = useState("dashboard"); // dashboard | addEmployee | announcements | chat
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  const menu = navConfig[user?.role] || [];
 
   useEffect(() => {
     if (user?.avatar || user?.profileImage) {
@@ -188,104 +187,57 @@ const RootDashboard = () => {
             {user?.name || "Dashboard"}
           </h2>
           <nav className="space-y-4">
-            <div className="bg-slate-800 rounded-lg border border-slate-700">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                onClick={() => {
-                  setCurrentView("dashboard");
-                  setChatOpen(false);
-                  setSelectedEmployee(null);
-                  setOpenIndex(null);
-                }}
-              >
-                Dashboard
-                <span className="text-slate-400">&#8250;</span>
-              </button>
-            </div>
             {menu.map((section, idx) => (
-              <React.Fragment key={section.title}>
-                    <div className="bg-slate-800 rounded-lg border border-slate-700">
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                        onClick={() => {
-                          if (section.items.length === 0 && section.title === "Leave Request") {
-                            setCurrentView("leaves");
-                            setChatOpen(false);
-                            setOpenIndex(null);
-                          } else {
-                            handleToggle(idx);
-                          }
-                        }}
-                      >
-                        {section.title}
-                        {section.items.length > 0 && (
-                          <span className={`text-slate-400 transition ${openIndex === idx ? "rotate-90" : ""}`}>
-                            &#8250;
-                          </span>
-                        )}
-                      </button>
-                      {section.items.length > 0 && (
-                        <div
-                          className={`bg-slate-900/40 border-t border-slate-700 transition-all ${
-                            openIndex === idx ? "max-h-40 opacity-100" : "max-h-0 opacity-0 overflow-hidden"
-                          }`}
+              <div key={section.title} className="bg-slate-800 rounded-lg border border-slate-700">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-4 py-3 font-medium"
+                  onClick={() => {
+                    if (section.view) {
+                      setCurrentView(section.view);
+                      setChatOpen(section.view === "chat");
+                      setOpenIndex(null);
+                    } else if (section.items && section.items.length > 0) {
+                      handleToggle(idx);
+                    }
+                  }}
+                >
+                  {section.title}
+                  {section.items && section.items.length > 0 && (
+                    <span className={`text-slate-400 transition ${openIndex === idx ? "rotate-90" : ""}`}>
+                      &#8250;
+                    </span>
+                  )}
+                </button>
+                {openIndex === idx && section.items && (
+                  <div className="px-4 pb-3">
+                    <div className="border-t border-slate-700 pt-2 space-y-1">
+                      {section.items.map((item) => (
+                        <button
+                          key={item}
+                          className="w-full text-left px-3 py-1.5 rounded-md text-sm hover:bg-slate-700/80"
+                          onClick={() => {
+                            if (item === "Add Employees") {
+                              setCurrentView("addEmployee");
+                            } else if (item === "Employees List") {
+                              setCurrentView("employeesList");
+                              setSelectedEmployee(null);
+                            } else if (item === "Leave Dashboard") {
+                              setCurrentView("leaveDashboard");
+                            } else if (item === "Password Resets") {
+                              setCurrentView("passwordResets");
+                            } else if (item === "View Reports") {
+                              setCurrentView("reports");
+                            }
+                          }}
                         >
-                          {section.items.map((item) => (
-                            <div
-                              key={item}
-                              className="px-4 py-2 text-sm text-slate-200 hover:bg-slate-700/60 cursor-pointer transition"
-                              onClick={() => {
-                                if (item === "Add Employees") {
-                                  setCurrentView("addEmployee");
-                                  setChatOpen(false);
-                                } else if (item === "Employees List") {
-                                  setCurrentView("employeesList");
-                                  setSelectedEmployee(null);
-                                  setChatOpen(false);
-                                } else if (item === "Add Attendence") {
-                                  setCurrentView("attendance");
-                                  setChatOpen(false);
-                                } else if (item === "Add Announcement") {
-                                  setCurrentView("addAnnouncement");
-                                  setChatOpen(false);
-                                } else if (item === "Announcement List") {
-                                  setCurrentView("announcementList");
-                                  setChatOpen(false);
-                                } else {
-                                  setCurrentView("dashboard");
-                                  setChatOpen(false);
-                                }
-                              }}
-                            >
-                              {item}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                          {item}
+                        </button>
+                      ))}
                     </div>
-
-                {idx === 0 && (
-                  <div className="bg-slate-800 rounded-lg border border-slate-700">
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between px-4 py-3 font-medium"
-                    onClick={() => {
-                        setChatOpen(true);
-                        setChatUnread(false);
-                        setCurrentView("chat");
-                    }}
-                  >
-                      <span className="flex items-center gap-2">
-                        Chat
-                        {chatUnread && <span className="h-2.5 w-2.5 rounded-full bg-red-500" />}
-                      </span>
-                      <span className="text-slate-400">&#8250;</span>
-                    </button>
                   </div>
                 )}
-              </React.Fragment>
+              </div>
             ))}
           </nav>
         </aside>
@@ -355,6 +307,22 @@ const RootDashboard = () => {
           ) : currentView === "leaves" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
               <LeavesList />
+            </section>
+          ) : currentView === "leaveDashboard" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <LeaveDashboard />
+            </section>
+          ) : currentView === "passwordResets" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <PasswordResetRequests />
+            </section>
+          ) : currentView === "reports" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <Reports />
+            </section>
+          ) : currentView === "notifications" ? (
+            <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+              <Notifications />
             </section>
           ) : currentView === "addAnnouncement" ? (
             <section className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">

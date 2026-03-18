@@ -35,6 +35,9 @@ const io = new Server(httpServer, {
     methods: ["GET", "POST"]
   }
 });
+
+const onlineUsers = {};
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true
@@ -145,6 +148,19 @@ app.post("/api/auth/reset-password", async (req, res) => {
       prisma.user.update({ where: { id: request.userId }, data: { passwordHash } }),
       prisma.passwordRequest.update({ where: { id: request.id }, data: { used: true } })
     ]);
+
+    await prisma.auditLog.create({
+        data: {
+            userId: request.userId,
+            action: 'PASSWORD_RESET',
+            entity: 'User',
+            entityId: request.userId,
+            oldValues: { passwordChanged: false },
+            newValues: { passwordChanged: true },
+            ipAddress: req.ip || 'unknown',
+        }
+    });
+
     res.json({ message: "Password reset successfully" });
   } catch (err) {
     console.error("Error resetting password:", err);
@@ -177,6 +193,26 @@ app.post("/api/auth/root-reset", auth, async (req, res) => {
   } catch (err) {
     console.error("Error root reset:", err);
     res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
+app.get("/api/password-requests", auth, authorizeRootOnly, async (req, res) => {
+  try {
+    const requests = await prisma.passwordRequest.findMany({
+      where: {
+        used: false,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    res.json({ requests });
+  } catch (err) {
+    console.error("Error fetching password requests:", err);
+    res.status(500).json({ error: "Failed to fetch password requests" });
   }
 });
 
@@ -308,6 +344,181 @@ app.get("/api/employees", auth, authorizeRoles('admin', 'root'), async (req, res
     res.status(500).json({ error: "Failed to fetch employees" });
   }
 });
+
+// Endpoint to get all password reset requests
+app.get(
+  "/api/password-requests",
+  auth,
+  authorizeRootOnly,
+  async (req, res) => {
+    try {
+      const requests = await prisma.passwordRequest.findMany({
+        where: {
+          used: false,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+      res.json({ requests });
+    } catch (err) {
+      console.error("Error fetching password requests:", err);
+      res.status(500).json({ error: "Failed to fetch password requests" });
+    }
+  }
+);
+
+// Get user stats
+app.get("/api/user/stats", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const totalLeaves = await prisma.leave.count({
+      where: {
+        userId: userId,
+      },
+    });
+
+    const latePunches = await prisma.attendance.count({
+      where: {
+        userId: userId,
+        status: "Late",
+      },
+    });
+
+    const onTimePunches = await prisma.attendance.count({
+      where: {
+        userId: userId,
+        status: "Present",
+      },
+    });
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+    });
+    const totalDays = Math.floor(
+      (new Date() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24)
+    );
+
+    res.json({
+      totalDays,
+      totalLeaves,
+      latePunches,
+      onTimePunches,
+    });
+  } catch (err) {
+    console.error("Error fetching user stats:", err);
+    res.status(500).json({ error: "Failed to fetch user stats" });
+  }
+});
+
+// Get user payslips
+app.get("/api/user/payslips", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const payslips = await prisma.payroll.findMany({
+      where: {
+        userId: userId,
+      },
+      orderBy: {
+        month: "desc",
+      },
+      take: 6,
+    });
+    res.json({ payslips });
+  } catch (err) {
+    console.error("Error fetching user payslips:", err);
+    res.status(500).json({ error: "Failed to fetch user payslips" });
+  }
+});
+
+// Generate payslip PDF
+app.get("/api/user/payslips/:payrollId", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { payrollId } = req.params;
+
+    const payroll = await prisma.payroll.findFirst({
+      where: {
+        id: payrollId,
+        userId: userId,
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!payroll) {
+      return res.status(404).json({ error: "Payslip not found" });
+    }
+
+    const doc = new PDFDocument({ margin: 50 });
+    const stream = res.writeHead(200, {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment;filename=payslip-${payroll.month}.pdf`,
+    });
+
+    doc.on('data', (chunk) => stream.write(chunk));
+    doc.on('end', () => stream.end());
+
+    // Add content to the PDF
+    doc.fontSize(25).text("Payslip", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(16).text(`Employee: ${payroll.user.name}`);
+    doc.text(`Month: ${payroll.month}`);
+    doc.moveDown();
+    doc.text(`Basic Salary: ${payroll.basicSalary}`);
+    doc.text(`Allowances: ${payroll.allowances}`);
+    doc.text(`Deductions: ${payroll.deductions}`);
+    doc.moveDown();
+    doc.fontSize(20).text(`Net Salary: ${payroll.netSalary}`);
+
+    doc.end();
+  } catch (err) {
+    console.error("Error generating payslip:", err);
+    res.status(500).json({ error: "Failed to generate payslip" });
+  }
+});
+
+// Notifications
+app.get("/api/notifications", auth, async (req, res) => {
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ notifications });
+  } catch (err) {
+    console.error("Error fetching notifications:", err);
+    res.status(500).json({ error: "Failed to fetch notifications" });
+  }
+});
+
+app.put("/api/notifications/:id/read", auth, async (req, res) => {
+  try {
+    const notification = await prisma.notification.updateMany({
+      where: {
+        id: req.params.id,
+        userId: req.user.id, // Ensure users can only update their own notifications
+      },
+      data: { read: true },
+    });
+
+    if (notification.count === 0) {
+      return res.status(404).json({ error: "Notification not found or not owned by user" });
+    }
+
+    res.json({ message: "Notification marked as read" });
+  } catch (err) {
+    console.error("Error marking notification as read:", err);
+    res.status(500).json({ error: "Failed to update notification" });
+  }
+});
 app.post("/api/employees", auth, authorizeRoles('admin', 'root'), upload.single("profileImage"), async (req, res) => {
   const data = req.body;
   if (!data.email || !data.name)
@@ -386,7 +597,24 @@ app.put("/api/employees/:id", auth, authorizeRoles('admin', 'root'), upload.sing
   if (data.role && !roles.includes(data.role)) delete data.role;
 
   try {
+    const oldUser = await prisma.user.findUnique({ where: { id } });
+    if (!oldUser) return res.status(404).json({ error: `User with ID ${id} not found.` });
+
     const user = await prisma.user.update({ where: { id }, data });
+
+    // Log audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'USER_UPDATED',
+        entity: 'User',
+        entityId: user.id,
+        oldValues: oldUser,
+        newValues: data,
+        ipAddress: req.ip || 'unknown',
+      }
+    });
+
     res.json({ user });
   } catch (error) {
     // Prisma's error code for "Record to update not found"
@@ -414,6 +642,7 @@ app.post("/api/leaves", auth, async (req, res) => {
   const { type, from, to, description } = req.body;
   if (from && isNaN(new Date(from).getTime())) return res.status(400).json({ error: "Invalid 'from' date format" });
   if (to && isNaN(new Date(to).getTime())) return res.status(400).json({ error: "Invalid 'to' date format" });
+  if (new Date(from) > new Date(to)) return res.status(400).json({ error: "'From' date must be before 'to' date" });
 
   try {
     const leave = await prisma.leave.create({
@@ -464,11 +693,173 @@ app.put("/api/leaves/:id/approve-level1", auth, authorizeRoles('manager', 'hr', 
       type: 'leave_level1_approved'
     });
 
+    // Log audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAVE_APPROVED_L1',
+        entity: 'Leave',
+        entityId: leave.id,
+        oldValues: { status: leave.status },
+        newValues: { status: 'Level1Approved', approvedBy: req.user.id },
+        ipAddress: req.ip || 'unknown',
+      }
+    });
+
     res.json({ leave: updated });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to approve leave" });
   }
+});
+
+// Announcements
+app.post("/api/announcements", auth, authorizeRoles('admin', 'manager', 'hr'), async (req, res) => {
+  const { title, message, audienceRoles, audienceDepartments } = req.body;
+  if (!title || !message) return res.status(400).json({ error: "Title and message are required" });
+
+  try {
+    const announcement = await prisma.announcement.create({
+      data: {
+        createdById: req.user.id,
+        title,
+        message,
+        audienceRoles: audienceRoles || [],
+        audienceDepartments: audienceDepartments || [],
+      },
+    });
+
+    // Notify relevant users
+    const usersToNotify = await prisma.user.findMany({
+      where: {
+        OR: [
+          { role: { in: audienceRoles } },
+          { department: { in: audienceDepartments } },
+        ],
+      },
+    });
+
+    const notifications = usersToNotify.map(user => ({
+      userId: user.id,
+      title: `New Announcement: ${title}`,
+      body: message.substring(0, 100),
+      type: 'new_announcement',
+    }));
+
+    if (notifications.length > 0) {
+      await prisma.notification.createMany({ data: notifications });
+      usersToNotify.forEach(user => {
+        io.to(`user:${user.id}`).emit('notification', { title: `New Announcement: ${title}`, body: message });
+      });
+    }
+
+    res.status(201).json({ announcement });
+  } catch (err) {
+    console.error("Error creating announcement:", err);
+    res.status(500).json({ error: "Failed to create announcement" });
+  }
+});
+
+app.get("/api/announcements", auth, async (req, res) => {
+  try {
+    const announcements = await prisma.announcement.findMany({
+      where: {
+        OR: [
+          { audienceRoles: { has: req.user.role } },
+          { audienceDepartments: { has: req.user.department } },
+          { AND: [{ audienceRoles: { isEmpty: true } }, { audienceDepartments: { isEmpty: true } }] },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      include: { createdBy: { select: { name: true, profileImage: true } } },
+    });
+    res.json({ announcements });
+  } catch (err) {
+    console.error("Error fetching announcements:", err);
+    res.status(500).json({ error: "Failed to fetch announcements" });
+  }
+});
+
+// Chat history
+app.get("/api/chat/history", auth, async (req, res) => {
+  try {
+    const messages = await prisma.chatMessage.findMany({
+      orderBy: {
+        createdAt: "asc",
+      },
+      include: {
+        sender: {
+          select: {
+            name: true,
+            profileImage: true,
+          },
+        },
+      },
+    });
+
+    const formattedMessages = messages.map((msg) => ({
+      id: msg.id,
+      text: msg.content,
+      senderId: msg.senderId,
+      timestamp: msg.createdAt,
+      sender: msg.sender,
+    }));
+
+    res.json({ messages: formattedMessages });
+  } catch (err) {
+    console.error("Error fetching chat history:", err);
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+});
+
+// Socket.IO connection
+io.on('connection', (socket) => {
+  console.log('a user connected:', socket.id);
+
+  socket.on('disconnect', () => {
+    console.log('user disconnected:', socket.id);
+  });
+
+  // Example: join a room based on user ID
+  socket.on('join', (userId) => {
+    socket.join(`user:${userId}`);
+    console.log(`Socket ${socket.id} joined room user:${userId}`);
+  });
+
+  // Handle chat messages
+  socket.on('message', async (message) => {
+    try {
+      // Save the message to the database
+      const savedMessage = await prisma.chatMessage.create({
+        data: {
+          content: message.text,
+          senderId: message.senderId,
+        },
+        include: {
+          sender: {
+            select: {
+              name: true,
+              profileImage: true
+            }
+          }
+        },
+      });
+
+      // Construct the message to broadcast
+      const broadcastMessage = {
+        id: savedMessage.id,
+        text: savedMessage.content,
+        senderId: savedMessage.senderId,
+        timestamp: savedMessage.createdAt,
+        sender: savedMessage.sender
+      };
+
+      // Broadcast the message to all clients
+      io.emit('message', broadcastMessage);
+    } catch (error) {
+      console.error('Error handling message:', error);
+    }
+  });
 });
 
 app.put("/api/leaves/:id/reject-level1", auth, authorizeRoles('manager', 'hr', 'admin'), async (req, res) => {
@@ -494,6 +885,18 @@ app.put("/api/leaves/:id/reject-level1", auth, authorizeRoles('manager', 'hr', '
         title: "Leave Level 1 Rejected", 
         body: `Your leave request was rejected by ${req.user.name}.`,
         type: 'leave_level1_rejected'
+      }
+    });
+
+    // Log audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAVE_REJECTED_L1',
+        entity: 'Leave',
+        entityId: leave.id,
+        newValues: { status: 'Level1Rejected', rejectedBy: req.user.id },
+        ipAddress: req.ip || 'unknown',
       }
     });
 
@@ -527,6 +930,18 @@ app.put("/api/leaves/:id/approve-level2", auth, authorizeRoles('root'), async (r
         title: "Leave Fully Approved",
         body: `Your leave request has been fully approved.`,
         type: 'leave_fully_approved'
+      }
+    });
+
+    // Log audit
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'LEAVE_APPROVED_L2',
+        entity: 'Leave',
+        entityId: leave.id,
+        newValues: { status: 'Level2Approved', approvedBy: req.user.id, comment: comment },
+        ipAddress: req.ip || 'unknown',
       }
     });
 
@@ -770,6 +1185,10 @@ io.on("connection", (socket) => {
     io.to(roomKey).emit("chat message", msgData);
   });
 
+  socket.on("typing", ({ roomKey, isTyping }) => {
+    socket.to(roomKey).emit("typing", { isTyping });
+  });
+
   socket.on("disconnect", () => console.log(`Socket disconnected: ${socket.user?.id}`));
 });
 
@@ -777,7 +1196,7 @@ io.on("connection", (socket) => {
 const directRoom = (userA, userB) => [userA, userB].sort().join(":");
 
 app.get("/api/chat", auth, async (req, res) => {
-  const { contactId, type } = req.query;
+  const { contactId, type, cursor, limit = 50 } = req.query;
   if (!contactId || !type) return res.status(400).json({ error: "contactId and type required" });
   let roomKey = contactId;
   if (type === "direct") roomKey = directRoom(req.user.id, contactId);
@@ -785,15 +1204,24 @@ app.get("/api/chat", auth, async (req, res) => {
     const messages = await prisma.chatMessage.findMany({
       where: { type, contactId: roomKey },
       include: { from: true },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
+      take: Number(limit),
+      ...(cursor && {
+        skip: 1,
+        cursor: {
+          id: cursor,
+        },
+      }),
     });
     const formatted = messages.map((m) => ({
       id: m.id,
       text: m.text,
       author: m.from.name,
       from: { _id: m.from.id, name: m.from.name },
+      read: m.read,
+      createdAt: m.createdAt,
     }));
-    res.json({ messages: formatted });
+    res.json({ messages: formatted.reverse() });
   } catch (err) {
     console.error("Error fetching chat messages:", err);
     res.status(500).json({ error: "Failed to fetch chat messages" });
@@ -826,12 +1254,32 @@ app.post("/api/chat", auth, async (req, res) => {
         text: message.text,
         author: message.from.name,
         from: { _id: message.from.id, name: message.from.name },
-      },
-ls
+      }
     });
   } catch (err) {
     console.error("Error creating chat message:", err);
     res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+app.put("/api/chat/messages/:id/read", auth, async (req, res) => {
+  try {
+    const message = await prisma.chatMessage.updateMany({
+      where: {
+        id: req.params.id,
+        toUserId: req.user.id,
+      },
+      data: { read: true },
+    });
+
+    if (message.count === 0) {
+      return res.status(404).json({ error: "Message not found or not owned by user" });
+    }
+
+    res.json({ message: "Message marked as read" });
+  } catch (err) {
+    console.error("Error marking message as read:", err);
+    res.status(500).json({ error: "Failed to update message" });
   }
 });
 
@@ -940,72 +1388,7 @@ app.post("/api/payroll/generate", auth, authorizeRoles('hr', 'admin', 'root'), a
   });
 });
 
-// Performance Reviews
-app.get("/api/reviews", auth, async (req, res) => {
-  const { revieweeId } = req.query;
-  const where = revieweeId ? { revieweeId } : {};
-  if (req.user.role !== 'root' && req.user.role !== 'admin' && req.user.role !== 'hr') {
-    where.reviewerId = req.user.id; // Own reviews
-  }
-  try {
-    const reviews = await prisma.review.findMany({
-      where,
-      include: {
-        reviewee: { select: { id: true, name: true, department: true } },
-        reviewer: { select: { id: true, name: true, role: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json({ reviews });
-  } catch (err) {
-    console.error("Error fetching reviews:", err);
-    res.status(500).json({ error: "Failed to fetch reviews" });
-  }
-});
-
-app.post("/api/reviews", auth, async (req, res) => {
-  const { revieweeId, rating, feedback, reviewDate } = req.body;
-  if (!revieweeId || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: "Valid revieweeId and rating (1-5) required" });
-  if (revieweeId === req.user.id) return res.status(400).json({ error: "Cannot review self" });
-  const reviewee = await prisma.user.findUnique({ where: { id: revieweeId } });
-  if (!reviewee) return res.status(404).json({ error: "Reviewee not found" });
-  // Role check: manager/hr can review
-  if (!['manager', 'hr', 'admin', 'root'].includes(req.user.role)) return res.status(403).json({ error: "Insufficient permissions" });
-  try {
-    const review = await prisma.review.create({
-      data: {
-        revieweeId,
-        reviewerId: req.user.id,
-        rating: Number(rating),
-        feedback,
-        reviewDate: reviewDate ? new Date(reviewDate) : new Date(),
-      }
-    });
-    res.status(201).json({ review });
-  } catch (err) {
-    console.error("Error creating review:", err);
-    res.status(500).json({ error: "Failed to create review" });
-  }
-});
-
-app.put("/api/reviews/:id", auth, async (req, res) => {
-  const { id } = req.params;
-  const { rating, feedback, reviewDate } = req.body;
-  if (rating && (rating < 1 || rating > 5)) return res.status(400).json({ error: "Rating must be 1-5" });
-  try {
-    const review = await prisma.review.findUnique({ where: { id } });
-    if (!review) return res.status(404).json({ error: "Review not found" });
-    if (review.reviewerId !== req.user.id && !['admin', 'root'].includes(req.user.role)) return res.status(403).json({ error: "Not authorized" });
-    const updated = await prisma.review.update({
-      where: { id },
-      data: { rating: Number(rating), feedback, reviewDate: reviewDate ? new Date(reviewDate) : review.reviewDate }
-    });
-    res.json({ review: updated });
-  } catch (err) {
-    console.error("Error updating review:", err);
-    res.status(500).json({ error: "Failed to update review" });
-  }
-});
+// Performance Reviews removed
 
 app.get("/api/stats", auth, async (req, res) => {
   const today = new Date();
@@ -1077,6 +1460,11 @@ app.use((err, req, res, next) => {
 });
 
 httpServer.listen(PORT, async () => {
-  await ensureRootSeed();
-  console.log(`API + Socket.io listening on http://localhost:${PORT}`);
+  try {
+    await ensureRootSeed();
+    console.log(`API + Socket.io listening on http://localhost:${PORT}`);
+  } catch (err) {
+    console.error("Failed to seed root user:", err);
+    process.exit(1);
+  }
 });

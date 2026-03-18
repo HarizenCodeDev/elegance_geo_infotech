@@ -5,7 +5,6 @@ import { useAuth } from "../context/authContext";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const LeaveApproval = ({ onBack }) => {
-  const { user } = useAuth();
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -22,7 +21,6 @@ const LeaveApproval = ({ onBack }) => {
       const res = await axios.get(`${API_BASE}/api/leaves`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Filter pending leaves for approval
       const pending = res.data.leaves.filter(l => l.status === 'Pending');
       setLeaves(pending);
     } catch (err) {
@@ -32,149 +30,152 @@ const LeaveApproval = ({ onBack }) => {
     }
   };
 
-  const approveLevel1 = async (leaveId) => {
+  const approveLeave = async (leaveId) => {
     try {
       const token = localStorage.getItem("token");
-      await axios.put(`${API_BASE}/api/leaves/${leaveId}/approve-level1`, 
-        { comment },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      loadLeaves(); // Refresh
-      setSelectedLeave(null);
-      setComment("");
-    } catch (err) {
-      alert(err.response?.data?.error || "Approval failed");
-    }
-  };
-
-  const rejectLevel1 = async (leaveId) => {
-    try {
-      const token = localStorage.getItem("token");
-      await axios.put(`${API_BASE}/api/leaves/${leaveId}/reject-level1`, 
-        { comment },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.put(`${API_BASE}/api/leaves/${leaveId}/approve`, { comment }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       loadLeaves();
       setSelectedLeave(null);
       setComment("");
     } catch (err) {
-      alert(err.response?.data?.error || "Rejection failed");
+      setError(err.response?.data?.error || "Failed to approve leave");
     }
   };
 
-  const approveLevel2 = async (leaveId) => {
+  const rejectLeave = async (leaveId) => {
     try {
       const token = localStorage.getItem("token");
-      await axios.put(`${API_BASE}/api/leaves/${leaveId}/approve-level2`, 
-        { comment },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.put(`${API_BASE}/api/leaves/${leaveId}/reject`, { comment }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       loadLeaves();
       setSelectedLeave(null);
       setComment("");
     } catch (err) {
-      alert(err.response?.data?.error || "Approval failed");
+      setError(err.response?.data?.error || "Failed to reject leave");
     }
   };
 
   if (loading) return <div className="text-white text-center">Loading...</div>;
+  if (error) return <div className="text-red-500 text-center">{error}</div>;
+
+  if (selectedLeave) {
+    return (
+      <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-white">Leave Request Details</h3>
+          <button
+            onClick={() => setSelectedLeave(null)}
+            className="text-slate-400 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Employee</label>
+            <p className="text-white">{selectedLeave.user.name}</p>
+          </div>
+          
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Leave Type</label>
+            <p className="text-white">{selectedLeave.type}</p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">From Date</label>
+              <p className="text-white">{new Date(selectedLeave.from).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">To Date</label>
+              <p className="text-white">{new Date(selectedLeave.to).toLocaleDateString()}</p>
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Description</label>
+            <p className="text-white">{selectedLeave.description}</p>
+          </div>
+          
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Comment</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white"
+              rows="3"
+              placeholder="Optional comment..."
+            />
+          </div>
+          
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={() => approveLeave(selectedLeave.id)}
+              className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-semibold hover:bg-emerald-500"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => rejectLeave(selectedLeave.id)}
+              className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-500"
+            >
+              Reject
+            </button>
+          </div>
+          
+          <button
+            onClick={() => setSelectedLeave(null)}
+            className="w-full mt-4 text-slate-400 hover:text-white text-sm underline"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <button onClick={onBack} className="text-slate-400 hover:text-white">&larr; Back</button>
-        <h2 className="text-2xl font-bold text-white">Leave Approvals</h2>
+    <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-6 shadow">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-bold text-white">Leave Approval</h3>
+        <button
+          onClick={onBack}
+          className="text-slate-400 hover:text-white"
+        >
+          ✕
+        </button>
       </div>
-
+      
       {leaves.length === 0 ? (
-        <div className="text-center text-slate-400 py-12">
+        <div className="text-slate-400 text-center py-8">
           No pending leave requests
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="space-y-3">
           {leaves.map((leave) => (
-            <div key={leave.id} className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 hover:border-indigo-500 transition">
-              <div className="flex items-start gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="font-semibold text-white">{leave.user.name}</div>
-                    <span className="px-2 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs">
-                      {leave.type}
-                    </span>
-                  </div>
-                  <div className="text-slate-300 mb-2">
-                    {leave.from?.toLocaleDateString()} - {leave.to?.toLocaleDateString()} ({Math.ceil((new Date(leave.to) - new Date(leave.from)) / 86400000) + 1} days)
-                  </div>
-                  <div className="text-slate-400 text-sm">{leave.description}</div>
+            <div
+              key={leave.id}
+              className="border border-slate-700 rounded-lg p-4 hover:bg-slate-800/40 cursor-pointer"
+              onClick={() => setSelectedLeave(leave)}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="text-white font-semibold">{leave.user.name}</h4>
+                  <p className="text-slate-400 text-sm">{leave.type} Leave</p>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setSelectedLeave(leave.id);
-                      setComment("");
-                    }}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 text-sm"
-                  >
-                    Approve L1
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedLeave(leave.id);
-                      setComment("");
-                    }}
-                    className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-500 text-sm"
-                  >
-                    Reject L1
-                  </button>
+                <div className="text-right">
+                  <p className="text-slate-400 text-sm">
+                    {new Date(leave.from).toLocaleDateString()} - {new Date(leave.to).toLocaleDateString()}
+                  </p>
+                  <p className="text-emerald-400 text-sm font-semibold">{leave.days} days</p>
                 </div>
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {selectedLeave && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={(e) => e.target === e.currentTarget && setSelectedLeave(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-white mb-4">Leave Action</h3>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Optional comment/reason..."
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 p-3 text-white mb-4"
-              rows={3}
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => approveLevel1(selectedLeave)}
-                className="flex-1 bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-500"
-              >
-                Approve Level 1
-              </button>
-              <button
-                onClick={() => rejectLevel1(selectedLeave)}
-                className="flex-1 bg-rose-600 text-white py-3 rounded-lg font-semibold hover:bg-rose-500"
-              >
-                Reject Level 1
-              </button>
-            </div>
-{localStorage.getItem("token") && (
-              <div className="flex gap-3 mt-3">
-                <button
-                  onClick={() => approveLevel2(selectedLeave)}
-                  className="flex-1 bg-sky-600 text-white py-2 rounded-lg font-semibold hover:bg-sky-500 text-sm"
-                >
-                  Final Approve (Root)
-                </button>
-              </div>
-            )}
-            <button
-              onClick={() => setSelectedLeave(null)}
-              className="w-full mt-4 text-slate-400 hover:text-white text-sm underline"
-            >
-              Cancel
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -182,11 +183,3 @@ const LeaveApproval = ({ onBack }) => {
 };
 
 export default LeaveApproval;
-
-</xai:function_call} 
-
-**Phase 7 Progress: Backend approval endpoints complete (Level 1/2). Frontend LeaveApproval.jsx created.**
-
-Next: Integrate into AdminDashboard + validation. Backend restart needed (`Ctrl+C` terminal + rerun). OK? 
-
-<parameter name="result">Phase 7 Backend complete. Frontend approval UI ready. Test workflow.

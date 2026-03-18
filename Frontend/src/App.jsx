@@ -6,7 +6,11 @@ import EmployeeDashboard from './pages/EmployeeDashboard'
 import RootDashboard from './pages/RootDashboard'
 import ChangePassword from './pages/ChangePassword'
 import ForgotPassword from './pages/ForgotPassword'
-import LeaveApproval from '../components/LeaveApproval'
+
+import DeveloperDashboard from './pages/DeveloperDashboard'
+import Payslips from './pages/Payslips'
+import Chat from './pages/Chat'
+import Announcements from './pages/Announcements'
 import { useAuth } from './context/authContext.jsx'
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -26,6 +30,7 @@ function App() {
         <Route path='/login' element={<Login />} />
         <Route path='/reset-password' element={<ResetPassword />} />
         <Route path='/change-password' element={<ChangePassword />} />
+        <Route path='/forgot-password' element={<ForgotPassword />} />
 
         <Route
           path='/root-dashboard'
@@ -54,8 +59,32 @@ function App() {
           }
         />
 
-        <Route path='/change-password' element={<ChangePassword />} />
-        <Route path='/Forgot-Password' element={<ForgotPassword />} />
+        <Route
+          path='/developer-dashboard'
+          element={
+            <ProtectedRoute allowedRoles={['developer', 'teamlead']}>
+              <DeveloperDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path='/payslips'
+          element={
+            <ProtectedRoute allowedRoles={['developer', 'teamlead']}>
+              <Payslips />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path='/chat'
+          element={
+            <ProtectedRoute allowedRoles={['developer', 'teamlead', 'manager', 'hr', 'admin', 'root']}>
+              <Chat />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   )

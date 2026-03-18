@@ -1,219 +1,204 @@
-import React, { useState, useMemo, useEffect } from "react";
+
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import axios from "axios";
-import { useAuth } from "../context/authContext";
-import { useSocket } from "../hooks/useSocket";
+import { FiSend, FiCheck } from "react-icons/fi";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-const directContactsStatic = [];
-
-const groupContacts = [
-  { id: "grp-hr", name: "HR", allowedRoles: ["admin", "manager", "root"] },
-  { id: "grp-bd", name: "Business Development", allowedRoles: ["admin", "manager", "root", "developer", "teamlead"] },
-  { id: "grp-dev", name: "Development", allowedRoles: ["teamlead", "developer", "root"] },
-  { id: "grp-team1", name: "Team1", allowedRoles: ["teamlead", "developer", "root"] },
-  { id: "grp-team2", name: "Team2", allowedRoles: ["teamlead", "developer", "root"] },
-];
-
-const ChatWindow = () => {
-  const { user } = useAuth();
-  const socket = useSocket();
-  const role = (user && user.role) || "employee";
-  const userId = user?.id;
-  const [directContacts, setDirectContacts] = useState(directContactsStatic);
-
-  const visibleGroups = useMemo(
-    () => groupContacts.filter((g) => g.allowedRoles?.includes(role)),
-    [role]
-  );
-
-  const [activeContact, setActiveContact] = useState(null);
-  const [messages, setMessages] = useState({});
+const ChatWindow = ({ activeContact, socket, currentUser }) => {
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [contactSearch, setContactSearch] = useState("");
-  const [chatError, _setChatError] = useState(""); // Used for error display
+  const [isTyping, setIsTyping] = useState(false);
+  const [cursor, setCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  const chatContainerRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    const loadContacts = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await axios.get(`${API_BASE}/api/employees`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const contacts =
-          res.data?.users
-            ?.filter((u) => u.id !== userId)
-            .map((u) => ({ id: u.id, name: u.name })) || [];
-        setDirectContacts(contacts);
-        if (!activeContact && contacts.length > 0) {
-          setActiveContact(contacts[0].id);
-        } else if (!activeContact && visibleGroups.length > 0) {
-          setActiveContact(visibleGroups[0].id);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    loadContacts();
-  }, [userId, visibleGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  const roomKey = useMemo(() => {
+    if (!activeContact || !currentUser) return null;
+    return [currentUser.id, activeContact.id].sort().join("-");
+  }, [activeContact, currentUser]);
 
-
-
-
-
-  useEffect(() => {
-    if (socket && activeContact) {
-      socket.emit("joinChat", activeContact);
-      socket.on("chat message", (msg) => {
-        setMessages((prev) => ({
-          ...prev,
-          [activeContact]: [...(prev[activeContact] || []), msg],
-        }));
+  const fetchMessages = useCallback(async (newCursor) => {
+    if (!activeContact) return;
+    try {
+      const res = await axios.get(`/api/chat`, {
+        params: {
+          contactId: activeContact.id,
+          type: "direct",
+          cursor: newCursor,
+          limit: 20,
+        },
       });
-      return () => {
-        socket.off("chat message");
-      };
+      setMessages((prev) => [...res.data.messages, ...prev]);
+      if (res.data.messages.length < 20) {
+        setHasMore(false);
+      } else {
+        setCursor(res.data.messages[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to fetch messages:", err);
     }
-  }, [socket, activeContact]);
+  }, [activeContact]);
 
-  const currentMessages = useMemo(() => {
-    const msgs = messages[activeContact] || [];
-    return msgs.map((m) => {
-      const author = m.author || m.from?.name || "Unknown";
-      const senderId = m.from?.id || m.from;
-      const senderString = senderId?.toString?.() || senderId;
-      const isYou = author === "You" || senderString === userId;
-      return { ...m, id: m.id || m._id, author, isYou };
-    });
-  }, [messages, activeContact, userId]);
+  useEffect(() => {
+    if (activeContact) {
+      setMessages([]);
+      setCursor(null);
+      setHasMore(true);
+    }
+  }, [activeContact]);
 
-  const send = (e) => {
-    e.preventDefault();
-    if (!text.trim() || !socket) return;
-    const entry = { id: Date.now(), author: "You", text: text.trim(), isYou: true };
-    setMessages((prev) => ({
-      ...prev,
-      [activeContact]: [...(prev[activeContact] || []), entry],
-    }));
-    setText("");
-    socket.emit("chat message", { roomKey: activeContact, text: entry.text });
+  useEffect(() => {
+    if (activeContact) {
+      fetchMessages(null);
+    }
+  }, [activeContact, fetchMessages]);
+
+  const markAsRead = async (messageId) => {
+    try {
+      await axios.put(`/api/chat/messages/${messageId}/read`);
+    } catch (err) {
+      console.error("Failed to mark message as read:", err);
+    }
   };
 
-  return (
-    <div className="flex h-full rounded-xl border border-slate-800 bg-[#0b141a] text-slate-100">
-      <aside className="w-64 border-r border-slate-800 bg-[#111b21]">
-        <div className="px-4 py-3 border-b border-slate-800 space-y-2">
-          <div className="text-xs uppercase tracking-wide text-slate-400">Direct</div>
-          <input
-            value={contactSearch}
-            onChange={(e) => setContactSearch(e.target.value)}
-            placeholder="Search people..."
-            className="w-full rounded-md border border-slate-800 bg-[#202c33] px-2 py-1 text-xs text-white placeholder-slate-500"
-          />
-        </div>
-        <div className="flex flex-col max-h-72 overflow-y-auto">
-          {directContacts
-            .filter((c) => c.name.toLowerCase().includes(contactSearch.toLowerCase()))
-            .map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setActiveContact(c.id)}
-                className={`flex items-center justify-between px-4 py-3 text-sm ${
-                  activeContact === c.id
-                    ? "bg-[#202c33] text-white"
-                    : "text-slate-200 hover:bg-[#202c33]"
-                }`}
-              >
-                <span>{c.name}</span>
-                {activeContact === c.id && (
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block" />
-                )}
-              </button>
-            ))}
-          {directContacts.filter((c) => c.name.toLowerCase().includes(contactSearch.toLowerCase())).length === 0 && (
-            <div className="px-4 py-3 text-xs text-slate-500">No matches</div>
-          )}
-        </div>
+  useEffect(() => {
+    if (socket) {
+      socket.on("message", (message) => {
+        if (
+          (message.fromId === activeContact?.id &&
+            message.toUserId === currentUser?.id) ||
+          (message.fromId === currentUser?.id &&
+            message.toUserId === activeContact?.id)
+        ) {
+          setMessages((prev) => [...prev, message]);
+        }
+      });
 
-        <div className="px-4 py-3 border-y border-slate-800 text-xs uppercase tracking-wide text-slate-400">
-          Groups
-        </div>
-        <div className="flex flex-col pb-2">
-          {visibleGroups.length === 0 && (
-            <div className="px-4 py-3 text-xs text-slate-500">No groups available for your role.</div>
-          )}
-          {visibleGroups.map((c) => (
+      socket.on("typing", ({ isTyping }) => {
+        setIsTyping(isTyping);
+      });
+
+      return () => {
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        socket.off("message");
+        socket.off("typing");
+      };
+    }
+  }, [socket, activeContact, currentUser]);
+
+  useEffect(() => {
+    messages.forEach((msg) => {
+      if (msg.toUserId === currentUser?.id && !msg.read) {
+        markAsRead(msg.id);
+      }
+    });
+  }, [messages, currentUser]);
+
+  const handleTextChange = (e) => {
+    setText(e.target.value);
+    if (socket) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      socket.emit("typing", { roomKey, isTyping: true });
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit("typing", { roomKey, isTyping: false });
+      }, 2000);
+    }
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (text.trim() === "") return;
+
+    const newMessage = {
+      text,
+      fromId: currentUser.id,
+      toUserId: activeContact.id,
+      contactId: activeContact.id,
+      type: "direct",
+    };
+
+    socket.emit("message", { roomKey, message: newMessage });
+    setMessages((prev) => [...prev, { ...newMessage, from: currentUser }]);
+    setText("");
+    if (socket) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      socket.emit("typing", { roomKey, isTyping: false });
+    }
+  };
+
+  if (!activeContact) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-400">
+        Select a contact to start chatting
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col bg-gray-800 text-white">
+      <div className="p-4 border-b border-gray-700">
+        <h2 className="text-xl font-bold">{activeContact.name}</h2>
+        {isTyping && <p className="text-sm text-gray-400">typing...</p>}
+      </div>
+      <div className="flex-1 p-4 overflow-y-auto" ref={chatContainerRef}>
+        {hasMore && (
+          <div className="text-center">
             <button
-              key={c.id}
-              type="button"
-              onClick={() => setActiveContact(c.id)}
-              className={`flex items-center justify-between px-4 py-3 text-sm ${
-                activeContact === c.id
-                  ? "bg-[#202c33] text-white"
-                  : "text-slate-200 hover:bg-[#202c33]"
+              onClick={() => fetchMessages(cursor)}
+              className="text-blue-400 hover:underline"
+            >
+              Load More
+            </button>
+          </div>
+        )}
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`mb-4 flex ${
+              msg.fromId === currentUser.id ? "justify-end" : "justify-start"
+            }`}
+          >
+            <div
+              className={`rounded-lg px-4 py-2 max-w-md ${
+                msg.fromId === currentUser.id
+                  ? "bg-blue-600"
+                  : "bg-gray-700"
               }`}
             >
-              <span>{c.name}</span>
-              {activeContact === c.id && (
-                <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block" />
-              )}
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <section className="flex flex-1 flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#202c33] rounded-tr-xl">
-          <div>
-            <div className="text-lg font-semibold">
-              {directContacts.concat(visibleGroups).find((c) => c.id === activeContact)?.name || "Chat"}
-            </div>
-            <div className="text-xs text-emerald-400">
-              {visibleGroups.some((g) => g.id === activeContact) ? "Group chat" : "Online"}
-            </div>
-          </div>
-        </div>
-        {chatError && <div className="px-4 py-2 text-xs text-rose-400 bg-[#1b242c] border-b border-slate-800">{chatError}</div>}
-
-        <div className="flex-1 bg-[#0b141a] px-4 py-3 overflow-y-auto space-y-3">
-          {currentMessages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.isYou ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow ${
-                  m.isYou
-                    ? "bg-[#005c4b] text-white"
-                    : "bg-[#202c33] text-slate-100"
-                }`}
-              >
-                <div className="text-[11px] uppercase tracking-wide opacity-70 mb-1">{m.author}</div>
-                <div>{m.text}</div>
+              <p>{msg.text}</p>
+              <div className="flex items-center justify-end text-xs text-gray-400 mt-1">
+                {new Date(msg.createdAt).toLocaleTimeString()}
+                {msg.fromId === currentUser.id && msg.read && (
+                  <FiCheck className="ml-1" />
+                )}
               </div>
             </div>
-          ))}
-        </div>
-
-        <form
-          onSubmit={send}
-          className="bg-[#202c33] border-t border-slate-800 rounded-b-xl px-3 py-3 flex items-center gap-2"
-        >
+          </div>
+        ))}
+      </div>
+      <div className="p-4 border-t border-gray-700">
+        <form onSubmit={handleSend} className="flex items-center">
           <input
+            type="text"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Type a message"
-            className="flex-1 rounded-full bg-[#2a3942] border border-slate-800 px-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            onChange={handleTextChange}
+            placeholder="Type a message..."
+            className="flex-1 bg-gray-700 rounded-full px-4 py-2 focus:outline-none"
           />
           <button
             type="submit"
-            className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 transition"
+            className="ml-4 bg-blue-600 rounded-full p-3 hover:bg-blue-700"
           >
-            Send
+            <FiSend />
           </button>
         </form>
-      </section>
+      </div>
     </div>
   );
 };

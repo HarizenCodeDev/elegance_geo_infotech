@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useAuth } from '../context/authContext';
+// import { useAuth } from '../context/authContext'; // not used in this component
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const EmployeeLeaveApply = ({ onBack }) => {
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user is not used in this component
   const [formData, setFormData] = useState({
     type: 'Annual',
     from: '',
@@ -31,7 +31,8 @@ const EmployeeLeaveApply = ({ onBack }) => {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post(`${API_BASE}/api/leaves`, formData, {
+      // const res = await axios.post(`${API_BASE}/api/leaves`, formData, {
+      await axios.post(`${API_BASE}/api/leaves`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSuccess('Leave request submitted successfully!');
@@ -120,7 +121,3 @@ const EmployeeLeaveApply = ({ onBack }) => {
 };
 
 export default EmployeeLeaveApply;
-</xai:function_call}
-
-<xai:function_call name="edit_file">
-<parameter name="path">Frontend/src/pages/EmployeeDashboard.jsx
