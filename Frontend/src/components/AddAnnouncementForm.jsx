@@ -70,6 +70,16 @@ const AddAnnouncementForm = ({ onCreated }) => {
 
   if (!user) return null;
 
+  const allowed = ['admin', 'manager', 'hr'];
+  if (!allowed.includes(user.role)) {
+    return (
+      <div className="max-w-3xl mx-auto bg-slate-800/60 border border-slate-700 rounded-xl p-6 text-slate-100">
+        <h2 className="text-xl font-semibold mb-2">Add Announcement</h2>
+        <div className="text-sm text-slate-300">You do not have permission to post announcements.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto bg-slate-800/60 border border-slate-700 rounded-xl p-6 text-slate-100">
       <h2 className="text-xl font-semibold mb-4">Add Announcement</h2>

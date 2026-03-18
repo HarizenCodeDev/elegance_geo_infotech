@@ -38,7 +38,7 @@ const AnnouncementsList = ({ title = "Announcement List" }) => {
       <div className="space-y-3">
         {rows.length === 0 && !loading && <div className="text-slate-400 text-sm text-center">No announcements.</div>}
         {rows.map((a) => (
-          <div key={a._id} className="rounded-lg border border-slate-700 bg-slate-800/70 p-4">
+          <div key={a.id || a._id} className="rounded-lg border border-slate-700 bg-slate-800/70 p-4">
             <div className="flex justify-between items-start gap-2 text-sm text-slate-300">
               <div>
                 <div className="font-semibold text-white">{a.title}</div>
